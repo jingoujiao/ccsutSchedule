@@ -19,11 +19,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -105,7 +109,15 @@ private fun AppRoot(repo: ScheduleRepository) {
     val today = LocalDate.now()
     val termStart = WeekUtils.parseIso(state.settings.termStartDate)
     val currentWeek = WeekUtils.weekOf(today, termStart)
-    val week = if (selectedWeek <= 0) (if (currentWeek > 0) currentWeek else 1) else selectedWeek
+    // 没设置开学日期时，优先停在「有课的最早一周」，避免导入后看到一片空白
+    val firstWeekWithCourses = remember(state.schedule.courses) {
+        state.schedule.courses.flatMap { it.weeks }.minOrNull() ?: 1
+    }
+    val week = when {
+        selectedWeek > 0 -> selectedWeek
+        currentWeek > 0 -> currentWeek
+        else -> firstWeekWithCourses
+    }
 
     fun toast(text: String) {
         message = text
@@ -146,7 +158,11 @@ private fun AppRoot(repo: ScheduleRepository) {
     CcsutTheme(state.settings) {
         AppBackground(state.settings) {
             Box(Modifier.fillMaxSize()) {
-                Column(Modifier.fillMaxSize()) {
+                Column(
+                    Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing)
+                ) {
                     Box(Modifier.weight(1f)) {
                         when (tab) {
                             0 -> WeekScreen(
@@ -193,6 +209,7 @@ private fun AppRoot(repo: ScheduleRepository) {
                         Modifier
                             .fillMaxSize()
                             .background(MaterialTheme.colorScheme.background)
+                            .windowInsetsPadding(WindowInsets.safeDrawing)
                     ) {
                         when (current) {
                             Overlay.Import -> ImportScreen(
@@ -335,6 +352,7 @@ private fun AppRoot(repo: ScheduleRepository) {
                     Box(
                         Modifier
                             .padding(bottom = 92.dp)
+                            .windowInsetsPadding(WindowInsets.navigationBars)
                             .clip(RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.inverseSurface)
                             .padding(horizontal = 18.dp, vertical = 11.dp)

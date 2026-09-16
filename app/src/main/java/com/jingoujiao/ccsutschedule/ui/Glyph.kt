@@ -58,15 +58,13 @@ fun GlyphIcon(
             }
 
             Glyph.Settings -> {
-                pen.circle(0.5f, 0.5f, 0.20f)
-                for (i in 0 until 8) {
-                    val angle = Math.toRadians((i * 45).toDouble())
-                    val cx = 0.5f + (kotlin.math.cos(angle) * 0.30f).toFloat()
-                    val cy = 0.5f + (kotlin.math.sin(angle) * 0.30f).toFloat()
-                    val ex = 0.5f + (kotlin.math.cos(angle) * 0.44f).toFloat()
-                    val ey = 0.5f + (kotlin.math.sin(angle) * 0.44f).toFloat()
-                    pen.line(cx, cy, ex, ey)
-                }
+                // 三条带滑块的横线，比齿轮更容易在小尺寸下辨认
+                pen.line(0.14f, 0.26f, 0.86f, 0.26f)
+                pen.line(0.14f, 0.50f, 0.86f, 0.50f)
+                pen.line(0.14f, 0.74f, 0.86f, 0.74f)
+                pen.dot(0.34f, 0.26f, 0.105f)
+                pen.dot(0.66f, 0.50f, 0.105f)
+                pen.dot(0.42f, 0.74f, 0.105f)
             }
 
             Glyph.Plus -> {

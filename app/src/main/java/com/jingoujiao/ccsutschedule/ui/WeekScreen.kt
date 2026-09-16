@@ -308,12 +308,18 @@ private fun PeriodColumn(periods: List<PeriodTime>, maxPeriod: Int) {
                 Text(
                     text = "$period",
                     fontSize = 14.sp,
+                    lineHeight = 16.sp,
                     fontWeight = FontWeight.SemiBold,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 if (time != null) {
-                    Text(time.start, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f))
-                    Text(time.end, fontSize = 9.sp, color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f))
+                    Text(
+                        text = "${time.start}\n${time.end}",
+                        fontSize = 9.sp,
+                        lineHeight = 11.sp,
+                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.75f),
+                    )
                 }
             }
         }

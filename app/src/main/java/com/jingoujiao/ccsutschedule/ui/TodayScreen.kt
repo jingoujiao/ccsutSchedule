@@ -71,7 +71,10 @@ fun TodayScreen(
                     append(" 周")
                 }
             },
-            actions = { IconAction(Glyph.Calendar, "回到课表", onOpenWeek) },
+            actions = {
+                IconAction(Glyph.Calendar, "回到课表", onOpenWeek)
+                IconAction(Glyph.Settings, "设置", onOpenSettings)
+            },
         )
 
         Column(
