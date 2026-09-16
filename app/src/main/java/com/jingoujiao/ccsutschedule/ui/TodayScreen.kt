@@ -88,18 +88,16 @@ fun TodayScreen(
         ) {
             if (firstMonday == null) {
                 HintCard(
-                    title = "还没告诉 App 第 1 周是哪一天",
-                    message = "课表文件里没有日期，只有「第几周有课」。填上第 1 周周一的日期，" +
-                        "今天的时间才能和课程对上（注意别填成开学日或军训周）。",
+                    title = "未设置课表第 1 周的周一",
+                    message = "填上之后，日期才能和课程对上。",
                     actionText = "去设置",
                     onAction = onOpenSettings,
                 )
             } else if (previewingFirstWeek) {
                 HintCard(
                     title = "今天不在教学周内",
-                    message = "${WeekUtils.formatMonthDay(today)} 还没到第 1 周（第 1 周 " +
-                        "${WeekUtils.weekRangeLabel(1, firstMonday)}）。下面按第 1 周 " +
-                        "${WeekUtils.weekdayLongLabel(weekday)} 的课表预览，不是今天的课。",
+                    message = "第 1 周 ${WeekUtils.weekRangeLabel(1, firstMonday)}，" +
+                        "下面按第 1 周 ${WeekUtils.weekdayLongLabel(weekday)} 预览。",
                 )
             }
 
@@ -112,7 +110,7 @@ fun TodayScreen(
                 EmptyState(
                     title = if (previewingFirstWeek) "第 1 周这一天没有课" else "今天没有课",
                     subtitle = if (effectiveWeek > 0) {
-                        "第 $effectiveWeek 周 ${WeekUtils.weekdayLongLabel(weekday)} 没有安排课程，好好休息。"
+                        "第 $effectiveWeek 周 ${WeekUtils.weekdayLongLabel(weekday)} 没有课。"
                     } else {
                         "今天没有安排课程。"
                     },

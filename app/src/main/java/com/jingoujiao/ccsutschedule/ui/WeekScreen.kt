@@ -5,6 +5,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,13 +14,18 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -41,7 +47,6 @@ import java.time.LocalDate
 import java.time.LocalTime
 
 private val PERIOD_COLUMN_WIDTH = 44.dp
-private val CELL_HEIGHT = 50.dp
 
 /**
  * 周课表：一周七天一屏显示（不横向滚动），纵向可滚动。
@@ -82,7 +87,7 @@ fun WeekScreen(
         else settings.periods.firstOrNull { nowMinutes in it.startMinutes until it.endMinutes }?.index ?: -1
     }
 
-    var menuVisible = remember { androidx.compose.runtime.mutableStateOf(false) }
+    var menuVisible by remember { mutableStateOf(false) }
 
     Column(Modifier.fillMaxSize()) {
         TopHeader(
@@ -92,31 +97,30 @@ fun WeekScreen(
             weekMonday = monday,
             onOpenToday = onOpenToday,
             onEdit = onAddManual,
-            onMore = { menuVisible.value = true },
+            onMore = { menuVisible = true },
         )
 
         WeekSwitcher(
             week = week,
             totalWeeks = settings.totalWeeks,
+            currentWeek = todayWeek,
+            firstMonday = firstMonday,
             onSelectWeek = onSelectWeek,
         )
 
-        // 日期能不能对上，直接写出来让用户核对
+        // 日期对不上时只留一句必要的提醒
         if (firstMonday == null) {
-            StatusLine("还没设置「第 1 周是哪一天」，表头日期暂时不准 —— 去「设置 → 课表第 1 周的周一」填一下")
+            StatusLine("未设置「课表第 1 周的周一」，表头日期不准")
         } else if (todayWeek == 0) {
-            StatusLine(
-                "今天 ${WeekUtils.formatMonthDay(today)} 还没到第 1 周，" +
-                    "第 1 周从 ${WeekUtils.formatMonthDay(firstMonday)} 开始（开学/军训周不算教学周）"
-            )
+            StatusLine("还没到第 1 周（${WeekUtils.formatMonthDay(firstMonday)} 开始）")
         } else if (todayWeek > settings.totalWeeks) {
-            StatusLine("第 ${settings.totalWeeks} 周已经结束")
+            StatusLine("第 ${settings.totalWeeks} 周已结束")
         }
 
         if (courses.isEmpty()) {
             EmptyState(
                 title = "还没有课表",
-                subtitle = "点右上角的铅笔可以手动加课；\n也可以从「…」里导入教务处导出的 xskb.xlsx。",
+                subtitle = "点右上角铅笔手动加课，\n或从「…」导入 xskb.xlsx",
                 glyph = Glyph.Import,
             )
         } else {
@@ -125,21 +129,30 @@ fun WeekScreen(
                 today = today,
                 highlightToday = isCurrentWeek,
             )
-            GridBody(
-                settings = settings,
-                courses = visibleCourses,
-                selectedWeek = week,
-                maxPeriod = maxPeriod,
-                todayWeekday = if (isCurrentWeek) today.dayOfWeek.value else -1,
-                highlightPeriod = currentPeriod,
-                onCourseClick = onCourseClick,
-                onAddCourse = onAddCourse,
-                modifier = Modifier.weight(1f),
-            )
+            // 节次行按可视高度均分，正好铺到底部；被悬浮导航挡住时向上滑一点即可
+            BoxWithConstraints(
+                Modifier
+                    .weight(1f)
+                    .fillMaxWidth()
+            ) {
+                val cellHeight = (maxHeight / maxPeriod).coerceIn(44.dp, 120.dp)
+                GridBody(
+                    settings = settings,
+                    courses = visibleCourses,
+                    selectedWeek = week,
+                    maxPeriod = maxPeriod,
+                    cellHeight = cellHeight,
+                    todayWeekday = if (isCurrentWeek) today.dayOfWeek.value else -1,
+                    highlightPeriod = currentPeriod,
+                    onCourseClick = onCourseClick,
+                    onAddCourse = onAddCourse,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
         }
     }
 
-    if (menuVisible.value) {
+    if (menuVisible) {
         ActionSheet(
             visible = true,
             title = "课表操作",
@@ -149,7 +162,7 @@ fun WeekScreen(
                 "手动添加课程" to onAddManual,
                 "清空课表" to onClearCourses,
             ),
-            onDismiss = { menuVisible.value = false },
+            onDismiss = { menuVisible = false },
         )
     }
 }
@@ -222,42 +235,144 @@ private fun TopHeader(
     }
 }
 
-/** 只保留「< 第 N 周 >」，周数只能靠左右箭头切换。 */
+/** 只保留「< 第 N 周 >」；点周数弹滚动选择器，右侧「本周」一键回到当前周。 */
 @Composable
 private fun WeekSwitcher(
     week: Int,
     totalWeeks: Int,
+    currentWeek: Int,
+    firstMonday: LocalDate?,
     onSelectWeek: (Int) -> Unit,
 ) {
-    Row(
+    var pickerVisible by remember { mutableStateOf(false) }
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center,
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(vertical = 6.dp)
     ) {
-        CircleIconButton(
-            glyph = Glyph.ChevronLeft,
-            contentDescription = "上一周",
-            onClick = { if (week > 1) onSelectWeek(week - 1) },
-            size = 38.dp,
-            tint = if (week > 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,
+        Row(
+            modifier = Modifier.align(Alignment.Center),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircleIconButton(
+                glyph = Glyph.ChevronLeft,
+                contentDescription = "上一周",
+                onClick = { if (week > 1) onSelectWeek(week - 1) },
+                size = 38.dp,
+                tint = if (week > 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,
+            )
+            Row(
+                modifier = Modifier
+                    .padding(horizontal = 10.dp)
+                    .clip(RoundedCornerShape(14.dp))
+                    .clickable { pickerVisible = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(
+                    text = "第 $week 周",
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = MaterialTheme.colorScheme.onBackground,
+                )
+                Spacer(Modifier.width(3.dp))
+                GlyphIcon(
+                    Glyph.ChevronDown,
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    size = 15.dp,
+                )
+            }
+            CircleIconButton(
+                glyph = Glyph.ChevronRight,
+                contentDescription = "下一周",
+                onClick = { if (week < totalWeeks) onSelectWeek(week + 1) },
+                size = 38.dp,
+                tint = if (week < totalWeeks) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,
+            )
+        }
+
+        if (currentWeek > 0 && week != currentWeek) {
+            Box(Modifier.align(Alignment.CenterEnd).padding(end = 12.dp)) {
+                PillChip(
+                    text = "本周",
+                    selected = false,
+                    onClick = { onSelectWeek(currentWeek) },
+                    accent = MaterialTheme.colorScheme.primary,
+                )
+            }
+        }
+    }
+
+    if (pickerVisible) {
+        WeekPickerSheet(
+            totalWeeks = totalWeeks,
+            selectedWeek = week,
+            currentWeek = currentWeek,
+            firstMonday = firstMonday,
+            onSelect = {
+                onSelectWeek(it)
+                pickerVisible = false
+            },
+            onDismiss = { pickerVisible = false },
         )
-        Text(
-            text = "第 $week 周",
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = MaterialTheme.colorScheme.onBackground,
-            textAlign = TextAlign.Center,
-            modifier = Modifier.padding(horizontal = 20.dp),
-        )
-        CircleIconButton(
-            glyph = Glyph.ChevronRight,
-            contentDescription = "下一周",
-            onClick = { if (week < totalWeeks) onSelectWeek(week + 1) },
-            size = 38.dp,
-            tint = if (week < totalWeeks) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,
-        )
+    }
+}
+
+/** 点周数后弹出的滚动选择器。 */
+@Composable
+private fun WeekPickerSheet(
+    totalWeeks: Int,
+    selectedWeek: Int,
+    currentWeek: Int,
+    firstMonday: LocalDate?,
+    onSelect: (Int) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val weeks = (1..totalWeeks.coerceIn(1, 60)).toList()
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = (selectedWeek - 3).coerceAtLeast(0))
+    CcsutSheet(visible = true, onDismiss = onDismiss) {
+        Text("选择周次", fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(8.dp))
+        LazyColumn(
+            state = listState,
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(320.dp),
+        ) {
+            items(weeks.size) { index ->
+                val item = weeks[index]
+                val isSelected = item == selectedWeek
+                val isCurrent = item == currentWeek
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isSelected) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent
+                        )
+                        .clickable { onSelect(item) }
+                        .padding(horizontal = 12.dp, vertical = 12.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "第 $item 周",
+                        fontSize = 15.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                        color = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
+                        modifier = Modifier.width(84.dp),
+                    )
+                    Text(
+                        text = WeekUtils.weekRangeLabel(item, firstMonday).orEmpty(),
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.weight(1f),
+                    )
+                    if (isCurrent) {
+                        Text("本周", fontSize = 12.sp, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -361,6 +476,7 @@ private fun GridBody(
     courses: List<Course>,
     selectedWeek: Int,
     maxPeriod: Int,
+    cellHeight: androidx.compose.ui.unit.Dp,
     todayWeekday: Int,
     highlightPeriod: Int,
     onCourseClick: (Course) -> Unit,
@@ -374,72 +490,78 @@ private fun GridBody(
             .verticalScroll(rememberScrollState())
     ) {
         Row(Modifier.fillMaxWidth()) {
-        // 节次列
-        Column(Modifier.width(PERIOD_COLUMN_WIDTH)) {
-            for (period in 1..maxPeriod) {
-                PeriodCell(
-                    period = period,
-                    time = settings.periods.firstOrNull { it.index == period },
-                    highlighted = period == highlightPeriod,
-                )
+            // 节次列
+            Column(Modifier.width(PERIOD_COLUMN_WIDTH)) {
+                for (period in 1..maxPeriod) {
+                    PeriodCell(
+                        period = period,
+                        time = settings.periods.firstOrNull { it.index == period },
+                        highlighted = period == highlightPeriod,
+                        cellHeight = cellHeight,
+                    )
+                }
             }
-        }
-        // 周一 … 周日（各占等宽，一屏放下）
-        for (weekday in 1..7) {
-            val dayCourses = remember(courses, weekday, maxPeriod) {
-                layoutColumn(courses.filter { it.weekday == weekday }, maxPeriod)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                dayCourses.forEach { slot ->
-                    when (slot) {
-                        is Slot.Block -> {
-                            val height = CELL_HEIGHT * slot.span - 2.dp
-                            Row(
-                                Modifier
-                                    .height(height)
-                                    .fillMaxWidth()
-                                    .padding(1.dp)
-                            ) {
-                                slot.courses.forEach { course ->
-                                    CourseCell(
-                                        course = course,
-                                        dark = dark,
-                                        dimmed = settings.showOtherWeeks && !course.activeInWeek(selectedWeek),
-                                        modifier = Modifier
-                                            .weight(1f)
-                                            .fillMaxSize(),
-                                        onClick = { onCourseClick(course) },
-                                    )
+            // 周一 … 周日（各占等宽，一屏放下）
+            for (weekday in 1..7) {
+                val dayCourses = remember(courses, weekday, maxPeriod) {
+                    layoutColumn(courses.filter { it.weekday == weekday }, maxPeriod)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    dayCourses.forEach { slot ->
+                        when (slot) {
+                            is Slot.Block -> {
+                                Row(
+                                    Modifier
+                                        .height(cellHeight * slot.span - 2.dp)
+                                        .fillMaxWidth()
+                                        .padding(1.dp)
+                                ) {
+                                    slot.courses.forEach { course ->
+                                        CourseCell(
+                                            course = course,
+                                            dark = dark,
+                                            dimmed = settings.showOtherWeeks && !course.activeInWeek(selectedWeek),
+                                            modifier = Modifier
+                                                .weight(1f)
+                                                .fillMaxSize(),
+                                            onClick = { onCourseClick(course) },
+                                        )
+                                    }
                                 }
                             }
-                        }
 
-                        is Slot.Empty -> {
-                            Box(
-                                Modifier
-                                    .height(CELL_HEIGHT)
-                                    .fillMaxWidth()
-                                    .padding(1.dp)
-                                    .clip(RoundedCornerShape(8.dp))
-                                    .clickable { onAddCourse(weekday, slot.period) }
-                            )
+                            is Slot.Empty -> {
+                                Box(
+                                    Modifier
+                                        .height(cellHeight)
+                                        .fillMaxWidth()
+                                        .padding(1.dp)
+                                        .clip(RoundedCornerShape(8.dp))
+                                        .clickable { onAddCourse(weekday, slot.period) }
+                                )
+                            }
                         }
                     }
                 }
             }
+            Box(Modifier.width(2.dp).height(cellHeight * maxPeriod))
         }
-        Box(Modifier.width(2.dp).height(CELL_HEIGHT * maxPeriod))
-        }
-        Spacer(Modifier.height(92.dp))
+        // 悬浮导航会压住最后几行，留一点可滚动空间让用户把课拉出来
+        Spacer(Modifier.height(84.dp))
     }
 }
 
 @Composable
-private fun PeriodCell(period: Int, time: PeriodTime?, highlighted: Boolean) {
+private fun PeriodCell(
+    period: Int,
+    time: PeriodTime?,
+    highlighted: Boolean,
+    cellHeight: androidx.compose.ui.unit.Dp,
+) {
     Column(
         modifier = Modifier
             .width(PERIOD_COLUMN_WIDTH)
-            .height(CELL_HEIGHT),
+            .height(cellHeight),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center,
     ) {

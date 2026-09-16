@@ -36,8 +36,12 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -54,6 +58,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.jingoujiao.ccsutschedule.data.AppSettings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -415,32 +421,39 @@ fun EmptyState(title: String, subtitle: String, glyph: Glyph = Glyph.Info) {
     }
 }
 
-/** 手写底部弹层：避免使用实验性的 ModalBottomSheet。 */
+/**
+ * 手写底部弹层：避免使用实验性的 ModalBottomSheet。
+ *
+ * 用 [Popup] 起独立窗口，这样弹层一定盖在悬浮导航之上（同一窗口里兄弟节点会压住它）。
+ */
 @Composable
 fun CcsutSheet(
     visible: Boolean,
     onDismiss: () -> Unit,
     content: @Composable ColumnScope.() -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
-        AnimatedVisibility(
-            visible = visible,
-            enter = fadeIn(tween(160)),
-            exit = fadeOut(tween(160)),
-        ) {
+    if (!visible) return
+    var appeared by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) { appeared = true }
+
+    Popup(
+        alignment = Alignment.BottomCenter,
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true),
+    ) {
+        Box(Modifier.fillMaxSize()) {
             Box(
                 Modifier
                     .fillMaxSize()
                     .background(Color.Black.copy(alpha = 0.45f))
                     .clickable(onClick = onDismiss)
             )
-        }
-        AnimatedVisibility(
-            visible = visible,
-            enter = slideInVertically(tween(220)) { it },
-            exit = slideOutVertically(tween(180)) { it },
-            modifier = Modifier.align(Alignment.BottomCenter),
-        ) {
+            AnimatedVisibility(
+                visible = appeared,
+                enter = slideInVertically(tween(220)) { it },
+                exit = slideOutVertically(tween(180)) { it },
+                modifier = Modifier.align(Alignment.BottomCenter),
+            ) {
             Surface(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(topStart = 26.dp, topEnd = 26.dp),
@@ -464,6 +477,7 @@ fun CcsutSheet(
                     content()
                 }
             }
+        }
         }
     }
 }

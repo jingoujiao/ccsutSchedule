@@ -51,9 +51,9 @@ fun ImportScreen(
             CardSurface {
                 SectionLabel("怎么拿到文件")
                 Text(
-                    "1. 用电脑登录教务处，进入「课表查询 / 上课啦」页面；\n" +
-                        "2. 导出或下载课表，得到 xskb.xlsx；\n" +
-                        "3. 把文件传到手机（微信/QQ/网盘均可），再从这里选进来。",
+                    "1. 电脑登录教务处，进入「课表查询 / 上课啦」；\n" +
+                        "2. 导出课表，得到 xskb.xlsx；\n" +
+                        "3. 传到手机后从这里选进来。",
                     fontSize = 13.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 20.sp,
@@ -157,9 +157,8 @@ fun ImportScreen(
 
                 if (state.settings.firstWeekMonday.isBlank()) {
                     HintCard(
-                        title = "别忘了告诉 App 第 1 周是哪一天",
-                        message = "导入只带来「第几周有课」，文件里没有任何日期。到设置里填上" +
-                            "「课表第 1 周的周一」，日期才能和课程对上（注意别填成开学日或军训周）。",
+                        title = "别忘了填「课表第 1 周的周一」",
+                        message = "文件里没有日期，填了才能对上日历。",
                     )
                 }
 

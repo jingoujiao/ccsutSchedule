@@ -89,7 +89,7 @@ fun SettingsScreen(
                 SettingRow(
                     title = "课表第 1 周的周一",
                     subtitle = if (termStart == null) {
-                        "未设置 · 填上它，日期才能和「第几周有课」对上"
+                        "未设置 · 日期会对不上"
                     } else {
                         "${WeekUtils.formatFull(termStart)} 星期一 · 第 1 周 " +
                             (WeekUtils.weekRangeLabel(1, termStart) ?: "")
@@ -100,25 +100,17 @@ fun SettingsScreen(
                         GlyphIcon(Glyph.ChevronRight, MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
                     },
                 )
-                Text(
-                    "这里是「正式上课第 1 周」的周一，不等于开学日：开学、军训那几周通常不算教学周，" +
-                        "课表文件里也没有日期，所以要用它把周次和日历对上。",
-                    fontSize = 11.5.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
-                )
                 if (misaligned && storedFirstDay != null && termStart != null) {
                     SettingRow(
-                        title = "填的 ${WeekUtils.formatFull(storedFirstDay)} 是" +
-                            WeekUtils.weekdayLongLabel(storedFirstDay.dayOfWeek.value) + "，已按该周周一计算",
-                        subtitle = "按这里对齐到 ${WeekUtils.formatFull(termStart)}（推荐）",
+                        title = "存的 ${WeekUtils.formatMonthDay(storedFirstDay)} 是" +
+                            WeekUtils.weekdayLongLabel(storedFirstDay.dayOfWeek.value) + "，已按周一算",
+                        subtitle = "点这里对齐到 ${WeekUtils.formatMonthDay(termStart)}",
                         glyph = Glyph.Warning,
                         onClick = { onUpdateSettings { it.copy(firstWeekMonday = termStart.toString()) } },
                     )
                 }
                 StepperRow(
                     title = "学期总周数",
-                    subtitle = "决定周次选择器与周次多选的条数",
                     value = "${settings.totalWeeks} 周",
                     onMinus = { onUpdateSettings { it.copy(totalWeeks = (it.totalWeeks - 1).coerceAtLeast(1)) } },
                     onPlus = { onUpdateSettings { it.copy(totalWeeks = (it.totalWeeks + 1).coerceAtMost(40)) } },
@@ -126,7 +118,6 @@ fun SettingsScreen(
                 if (termStart != null) {
                     SettingRow(
                         title = WeekUtils.teachingStatus(LocalDate.now(), termStart, settings.totalWeeks),
-                        subtitle = "按「第 1 周周一」实时计算，对不上就改上面的日期",
                         glyph = Glyph.Info,
                     )
                 }
@@ -248,7 +239,7 @@ fun SettingsScreen(
                 )
                 SettingRow(
                     title = "清空课表",
-                    subtitle = "只清空课程数据，设置与背景保留",
+                    subtitle = "只清课程，设置保留",
                     glyph = Glyph.Delete,
                     onClick = { showClearConfirm = true },
                 )
@@ -257,10 +248,9 @@ fun SettingsScreen(
             Spacer(Modifier.height(14.dp))
             SectionLabel("关于")
             CardSurface {
-                SettingRow(title = "长工课程表", subtitle = "版本 1.0.0 · 本地离线运行，不联网、不收集任何数据", glyph = Glyph.Info)
+                SettingRow(title = "长工课程表", subtitle = "版本 1.0.0 · 本地离线，不联网", glyph = Glyph.Info)
                 Text(
-                    "导入说明：在教务处导出课表后，把 xskb.xlsx 直接选进来即可。文件里没有开学日期与作息时间，" +
-                        "这两项需要自己设置；周次按文件里的「第 N 周」原样解析。",
+                    "把教务处导出的 xskb.xlsx 选进来即可。",
                     fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
@@ -293,7 +283,7 @@ fun SettingsScreen(
     if (showClearConfirm) {
         ConfirmDialog(
             title = "清空课表",
-            message = "会删除全部 ${state.schedule.courses.size} 个课程块，此操作不可撤销。设置、作息与背景会保留。",
+            message = "会删除全部 ${state.schedule.courses.size} 个课程块，不可撤销。",
             confirmText = "清空",
             onConfirm = {
                 onClearCourses()
@@ -326,9 +316,8 @@ private fun SimpleDatePicker(
         text = {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "课表文件里只有「第几周有课」，没有任何日期。请选正式上课第 1 周的周一，" +
-                        "App 用这一天把周次换算成日历日期。开学日、军训周通常不算教学周，别填成开学那天。",
-                    fontSize = 12.5.sp,
+                    "选正式上课第 1 周的周一，不是开学日。",
+                    fontSize = 12.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     lineHeight = 18.sp,
                 )
@@ -351,7 +340,7 @@ private fun SimpleDatePicker(
                 )
 
                 Spacer(Modifier.height(10.dp))
-                SectionLabel("换算预览（照着校历核对一下）")
+                SectionLabel("换算预览")
                 listOf(1, 2, 3).forEach { week ->
                     PreviewWeekRow(week, firstMonday)
                 }

@@ -23,7 +23,7 @@ import androidx.compose.ui.unit.dp
  */
 enum class Glyph {
     Calendar, Today, Settings, Plus, Back, Edit, Delete, Close, Check,
-    Image, Clock, Import, Palette, ChevronLeft, ChevronRight, More, Warning, Info, Trash,
+    Image, Clock, Import, Palette, ChevronLeft, ChevronRight, ChevronDown, More, Warning, Info, Trash,
 }
 
 @Composable
@@ -148,6 +148,11 @@ fun GlyphIcon(
             Glyph.ChevronRight -> {
                 pen.line(0.38f, 0.22f, 0.66f, 0.5f)
                 pen.line(0.66f, 0.5f, 0.38f, 0.78f)
+            }
+
+            Glyph.ChevronDown -> {
+                pen.line(0.22f, 0.40f, 0.5f, 0.66f)
+                pen.line(0.78f, 0.40f, 0.5f, 0.66f)
             }
 
             Glyph.More -> {
