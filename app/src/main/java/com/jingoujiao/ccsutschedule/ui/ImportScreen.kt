@@ -155,10 +155,11 @@ fun ImportScreen(
                         }
                 }
 
-                if (state.settings.termStartDate.isBlank()) {
+                if (state.settings.firstWeekMonday.isBlank()) {
                     HintCard(
-                        title = "别忘了设置开学日期",
-                        message = "导入只带来「第几周有课」，要自动定位当前周，需要到设置里填第 1 周周一的日期。",
+                        title = "别忘了告诉 App 第 1 周是哪一天",
+                        message = "导入只带来「第几周有课」，文件里没有任何日期。到设置里填上" +
+                            "「课表第 1 周的周一」，日期才能和课程对上（注意别填成开学日或军训周）。",
                     )
                 }
 

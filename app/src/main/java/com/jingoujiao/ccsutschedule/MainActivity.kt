@@ -108,8 +108,8 @@ private fun AppRoot(repo: ScheduleRepository) {
     var pendingSlot by remember { mutableStateOf<Pair<Int, Int>?>(null) }
 
     val today = LocalDate.now()
-    val termStart = WeekUtils.parseIso(state.settings.termStartDate)
-    val currentWeek = WeekUtils.weekOf(today, termStart)
+    val firstMonday = WeekUtils.firstWeekMonday(state.settings.firstWeekMonday)
+    val currentWeek = WeekUtils.weekOf(today, firstMonday)
     // 没设置开学日期时，优先停在「有课的最早一周」，避免导入后看到一片空白
     val firstWeekWithCourses = remember(state.schedule.courses) {
         state.schedule.courses.flatMap { it.weeks }.minOrNull() ?: 1

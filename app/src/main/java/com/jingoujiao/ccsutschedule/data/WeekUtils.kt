@@ -98,10 +98,21 @@ object WeekUtils {
 
     fun mondayOf(date: LocalDate): LocalDate = date.with(TemporalAdjusters.previousOrSame(DayOfWeek.MONDAY))
 
-    /** 计算 [date] 落在第几教学周（第 1 周为 [termStart] 所在周）。返回 1..99，未设置或早于开学返回 0。 */
-    fun weekOf(date: LocalDate, termStart: LocalDate?): Int {
-        if (termStart == null) return 0
-        val startMonday = mondayOf(termStart)
+    /**
+     * 从存储的 ISO 文本取出「第 1 周周一」，并**统一对齐到周一**。
+     *
+     * 全 App 都必须走这里：老数据里可能存着非周一（例如用户按开学日填了 9/19 周六），
+     * 直接用它算周次会让整学期偏移，而且界面会显示「9月19日 星期一」这种自相矛盾的文案。
+     */
+    fun firstWeekMonday(iso: String?): LocalDate? = parseIso(iso)?.let { mondayOf(it) }
+
+    /**
+     * 计算 [date] 落在第几教学周（第 1 周 = [firstWeekMonday] 所在的那一周）。
+     * 返回 1..99；未设置、或日期早于第 1 周（还没开学上课）返回 0。
+     */
+    fun weekOf(date: LocalDate, firstWeekMonday: LocalDate?): Int {
+        if (firstWeekMonday == null) return 0
+        val startMonday = mondayOf(firstWeekMonday)
         val target = mondayOf(date)
         val days = java.time.temporal.ChronoUnit.DAYS.between(startMonday, target)
         if (days < 0) return 0
@@ -109,9 +120,28 @@ object WeekUtils {
     }
 
     /** 第 [week] 周对应的周一。 */
-    fun mondayOfWeek(week: Int, termStart: LocalDate?): LocalDate? {
-        if (termStart == null) return null
-        return mondayOf(termStart).plusWeeks((week - 1).toLong())
+    fun mondayOfWeek(week: Int, firstWeekMonday: LocalDate?): LocalDate? {
+        if (firstWeekMonday == null) return null
+        return mondayOf(firstWeekMonday).plusWeeks((week - 1).toLong())
+    }
+
+    /** 第 [week] 周的日期区间文案，例如 “10/5 ~ 10/11”。 */
+    fun weekRangeLabel(week: Int, firstWeekMonday: LocalDate?): String? {
+        val monday = mondayOfWeek(week, firstWeekMonday) ?: return null
+        val sunday = monday.plusDays(6)
+        return "${monday.monthValue}/${monday.dayOfMonth} ~ ${sunday.monthValue}/${sunday.dayOfMonth}"
+    }
+
+    /** 今天相对教学周的状态描述，用来让用户核对日期对不对得上。 */
+    fun teachingStatus(today: LocalDate, firstWeekMonday: LocalDate?, totalWeeks: Int): String {
+        if (firstWeekMonday == null) return "还没告诉 App 第 1 周是哪一天，日期暂时对不上"
+        val week = weekOf(today, firstWeekMonday)
+        val start = mondayOf(firstWeekMonday)
+        return when {
+            week == 0 -> "今天 ${formatMonthDay(today)} 还没到第 1 周（第 1 周从 ${formatMonthDay(start)} 开始）"
+            week > totalWeeks -> "第 $totalWeeks 周已结束（最后一周到 ${formatMonthDay(start.plusWeeks((totalWeeks - 1).toLong()).plusDays(6))}）"
+            else -> "今天 ${formatMonthDay(today)} 属于第 $week 周"
+        }
     }
 
     fun formatMonthDay(date: LocalDate): String = "%d月%d日".format(date.monthValue, date.dayOfMonth)

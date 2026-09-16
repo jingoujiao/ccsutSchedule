@@ -64,9 +64,9 @@ fun WeekScreen(
     val settings = state.settings
     val courses = state.schedule.courses
     val week = selectedWeek.coerceAtLeast(1)
-    val termStart = WeekUtils.parseIso(settings.termStartDate)
-    val todayWeek = WeekUtils.weekOf(today, termStart)
-    val monday = WeekUtils.mondayOfWeek(week, termStart)
+    val firstMonday = WeekUtils.firstWeekMonday(settings.firstWeekMonday)
+    val todayWeek = WeekUtils.weekOf(today, firstMonday)
+    val monday = WeekUtils.mondayOfWeek(week, firstMonday)
     val isCurrentWeek = todayWeek > 0 && week == todayWeek
 
     val visibleCourses = remember(courses, week, settings.showOtherWeeks) {
@@ -100,6 +100,18 @@ fun WeekScreen(
             totalWeeks = settings.totalWeeks,
             onSelectWeek = onSelectWeek,
         )
+
+        // 日期能不能对上，直接写出来让用户核对
+        if (firstMonday == null) {
+            StatusLine("还没设置「第 1 周是哪一天」，表头日期暂时不准 —— 去「设置 → 课表第 1 周的周一」填一下")
+        } else if (todayWeek == 0) {
+            StatusLine(
+                "今天 ${WeekUtils.formatMonthDay(today)} 还没到第 1 周，" +
+                    "第 1 周从 ${WeekUtils.formatMonthDay(firstMonday)} 开始（开学/军训周不算教学周）"
+            )
+        } else if (todayWeek > settings.totalWeeks) {
+            StatusLine("第 ${settings.totalWeeks} 周已经结束")
+        }
 
         if (courses.isEmpty()) {
             EmptyState(
@@ -138,6 +150,26 @@ fun WeekScreen(
                 "清空课表" to onClearCourses,
             ),
             onDismiss = { menuVisible.value = false },
+        )
+    }
+}
+
+@Composable
+private fun StatusLine(text: String) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        GlyphIcon(Glyph.Info, MaterialTheme.colorScheme.tertiary, size = 14.dp)
+        Spacer(Modifier.width(6.dp))
+        Text(
+            text = text,
+            fontSize = 11.5.sp,
+            lineHeight = 15.sp,
+            color = MaterialTheme.colorScheme.tertiary,
+            modifier = Modifier.weight(1f),
         )
     }
 }

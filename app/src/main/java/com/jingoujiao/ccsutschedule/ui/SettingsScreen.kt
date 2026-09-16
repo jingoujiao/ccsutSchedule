@@ -61,7 +61,9 @@ fun SettingsScreen(
     var showDatePicker by remember { mutableStateOf(false) }
     var showPeriodEditor by remember { mutableStateOf(false) }
     var showClearConfirm by remember { mutableStateOf(false) }
-    val termStart = WeekUtils.parseIso(settings.termStartDate)
+    val storedFirstDay = WeekUtils.parseIso(settings.firstWeekMonday)
+    val termStart = WeekUtils.firstWeekMonday(settings.firstWeekMonday)
+    val misaligned = storedFirstDay != null && termStart != null && storedFirstDay != termStart
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
@@ -85,15 +87,35 @@ fun SettingsScreen(
                 )
                 Spacer(Modifier.height(12.dp))
                 SettingRow(
-                    title = "开学日期（第 1 周周一）",
-                    subtitle = termStart?.let { "${WeekUtils.formatFull(it)} ${WeekUtils.weekdayLongLabel(it.dayOfWeek.value)}" }
-                        ?: "未设置 · 设置后可自动定位当前周",
+                    title = "课表第 1 周的周一",
+                    subtitle = if (termStart == null) {
+                        "未设置 · 填上它，日期才能和「第几周有课」对上"
+                    } else {
+                        "${WeekUtils.formatFull(termStart)} 星期一 · 第 1 周 " +
+                            (WeekUtils.weekRangeLabel(1, termStart) ?: "")
+                    },
                     glyph = Glyph.Today,
                     onClick = { showDatePicker = true },
                     trailing = {
                         GlyphIcon(Glyph.ChevronRight, MaterialTheme.colorScheme.onSurfaceVariant, size = 18.dp)
                     },
                 )
+                Text(
+                    "这里是「正式上课第 1 周」的周一，不等于开学日：开学、军训那几周通常不算教学周，" +
+                        "课表文件里也没有日期，所以要用它把周次和日历对上。",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 2.dp),
+                )
+                if (misaligned && storedFirstDay != null && termStart != null) {
+                    SettingRow(
+                        title = "填的 ${WeekUtils.formatFull(storedFirstDay)} 是" +
+                            WeekUtils.weekdayLongLabel(storedFirstDay.dayOfWeek.value) + "，已按该周周一计算",
+                        subtitle = "按这里对齐到 ${WeekUtils.formatFull(termStart)}（推荐）",
+                        glyph = Glyph.Warning,
+                        onClick = { onUpdateSettings { it.copy(firstWeekMonday = termStart.toString()) } },
+                    )
+                }
                 StepperRow(
                     title = "学期总周数",
                     subtitle = "决定周次选择器与周次多选的条数",
@@ -103,8 +125,8 @@ fun SettingsScreen(
                 )
                 if (termStart != null) {
                     SettingRow(
-                        title = "当前是第 ${WeekUtils.weekOf(LocalDate.now(), termStart)} 周",
-                        subtitle = "按开学日期实时计算",
+                        title = WeekUtils.teachingStatus(LocalDate.now(), termStart, settings.totalWeeks),
+                        subtitle = "按「第 1 周周一」实时计算，对不上就改上面的日期",
                         glyph = Glyph.Info,
                     )
                 }
@@ -252,10 +274,11 @@ fun SettingsScreen(
         SimpleDatePicker(
             initial = termStart ?: WeekUtils.mondayOf(LocalDate.now()),
             onConfirm = { date ->
-                onUpdateSettings { it.copy(termStartDate = date.toString()) }
+                onUpdateSettings { it.copy(firstWeekMonday = date.toString()) }
                 showDatePicker = false
             },
             onDismiss = { showDatePicker = false },
+            totalWeeks = settings.totalWeeks,
         )
     }
 
@@ -284,6 +307,7 @@ fun SettingsScreen(
 @Composable
 private fun SimpleDatePicker(
     initial: LocalDate,
+    totalWeeks: Int,
     onConfirm: (LocalDate) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -292,32 +316,58 @@ private fun SimpleDatePicker(
     var day by remember { mutableStateOf(initial.dayOfMonth) }
     val maxDay = YearMonth.of(year, month).lengthOfMonth()
     val safeDay = day.coerceIn(1, maxDay)
-    val preview = LocalDate.of(year, month, safeDay)
+    val picked = LocalDate.of(year, month, safeDay)
+    // 一律对齐到所选日期所在周的周一，避免用户选到周中导致整学期偏移
+    val firstMonday = WeekUtils.mondayOf(picked)
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("选择开学日期") },
+        title = { Text("课表第 1 周的周一") },
         text = {
-            Column {
+            Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
-                    "填第 1 周的周一。例：10 月 5 日那周是第 1 周，就选 2026-10-05。",
+                    "课表文件里只有「第几周有课」，没有任何日期。请选正式上课第 1 周的周一，" +
+                        "App 用这一天把周次换算成日历日期。开学日、军训周通常不算教学周，别填成开学那天。",
                     fontSize = 12.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    lineHeight = 18.sp,
                 )
-                Spacer(Modifier.height(8.dp))
+                Spacer(Modifier.height(10.dp))
                 StepperRow("年", "$year", { year -= 1 }, { year += 1 })
                 StepperRow("月", "$month", { month = if (month == 1) 12 else month - 1 }, { month = if (month == 12) 1 else month + 1 })
                 StepperRow("日", "$safeDay", { day = (safeDay - 1).coerceAtLeast(1) }, { day = (safeDay + 1).coerceAtMost(maxDay) })
-                Spacer(Modifier.height(6.dp))
+
+                Spacer(Modifier.height(10.dp))
                 Text(
-                    "＝ ${WeekUtils.formatFull(preview)} ${WeekUtils.weekdayLongLabel(preview.dayOfWeek.value)}",
+                    if (picked == firstMonday) {
+                        "第 1 周周一 ＝ ${WeekUtils.formatFull(firstMonday)}"
+                    } else {
+                        "${WeekUtils.formatMonthDay(picked)} 是${WeekUtils.weekdayLongLabel(picked.dayOfWeek.value)}，" +
+                            "已自动对齐到该周周一：${WeekUtils.formatFull(firstMonday)}"
+                    },
                     fontSize = 13.sp,
                     fontWeight = FontWeight.Medium,
                     color = MaterialTheme.colorScheme.primary,
                 )
+
+                Spacer(Modifier.height(10.dp))
+                SectionLabel("换算预览（照着校历核对一下）")
+                listOf(1, 2, 3).forEach { week ->
+                    PreviewWeekRow(week, firstMonday)
+                }
+                if (totalWeeks > 3) {
+                    PreviewWeekRow(totalWeeks, firstMonday, prefix = "… 最后一周")
+                }
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    WeekUtils.teachingStatus(LocalDate.now(), firstMonday, totalWeeks),
+                    fontSize = 12.5.sp,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+
                 Spacer(Modifier.height(10.dp))
                 SecondaryButton(
-                    text = "选本周一（${WeekUtils.mondayOf(LocalDate.now())}）",
+                    text = "用本周一（${WeekUtils.mondayOf(LocalDate.now())}）",
                     onClick = {
                         val monday = WeekUtils.mondayOf(LocalDate.now())
                         year = monday.year
@@ -328,9 +378,26 @@ private fun SimpleDatePicker(
                 )
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(preview) }) { Text("确定") } },
+        confirmButton = { TextButton(onClick = { onConfirm(firstMonday) }) { Text("确定") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
     )
+}
+
+@Composable
+private fun PreviewWeekRow(week: Int, firstMonday: LocalDate, prefix: String? = null) {
+    Row(Modifier.fillMaxWidth().padding(vertical = 2.dp)) {
+        Text(
+            prefix ?: "第 $week 周",
+            fontSize = 12.5.sp,
+            color = MaterialTheme.colorScheme.onSurface,
+            modifier = Modifier.width(128.dp),
+        )
+        Text(
+            WeekUtils.weekRangeLabel(week, firstMonday).orEmpty(),
+            fontSize = 12.5.sp,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+    }
 }
 
 @Composable

@@ -1,6 +1,8 @@
 package com.jingoujiao.ccsutschedule.data
 
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonNames
 
 /**
  * 一门课在课表网格里的一个「格子块」。
@@ -72,8 +74,18 @@ data class ScheduleData(
 
 @Serializable
 data class AppSettings(
-    /** 第 1 周周一的日期，ISO 格式 yyyy-MM-dd。留空表示尚未设置。 */
-    val termStartDate: String = "",
+    /**
+     * 课表第 1 周的周一（ISO yyyy-MM-dd）。留空表示尚未设置。
+     *
+     * 注意：这不是「开学日」。xskb.xlsx 里没有任何日期，只有「第几周有课」，
+     * 所以必须由用户指定「第 1 周周一 = 哪一天」，日期才能和课程对上；
+     * 开学日与正式上课日往往不是同一周（开学、军训那几周通常不算教学周）。
+     *
+     * 存储键用新名 `firstWeekMonday`，同时接受旧键 `termStartDate`，老数据不会丢。
+     */
+    @OptIn(ExperimentalSerializationApi::class)
+    @JsonNames("termStartDate")
+    val firstWeekMonday: String = "",
     val totalWeeks: Int = 20,
     val periods: List<PeriodTime> = defaultPeriodTimes(),
     val themeMode: String = ThemeMode.SYSTEM,

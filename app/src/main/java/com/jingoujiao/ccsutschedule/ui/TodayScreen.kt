@@ -44,14 +44,21 @@ fun TodayScreen(
     onOpenSettings: () -> Unit,
 ) {
     val settings = state.settings
-    val termStart = WeekUtils.parseIso(settings.termStartDate)
-    val week = WeekUtils.weekOf(today, termStart)
+    val firstMonday = WeekUtils.firstWeekMonday(settings.firstWeekMonday)
+    val week = WeekUtils.weekOf(today, firstMonday)
     val weekday = today.dayOfWeek.value
     val nowMinutes = LocalTime.now().let { it.hour * 60 + it.minute }
+    // 还没到第 1 周时，改为预览第 1 周同一天的课，避免把某周的课误当成“今天的课”
+    val previewingFirstWeek = firstMonday != null && week <= 0
+    val effectiveWeek = when {
+        week > 0 -> week
+        previewingFirstWeek -> 1
+        else -> 0
+    }
 
     val todayCourses = state.schedule.courses
         .filter { it.weekday == weekday }
-        .filter { week <= 0 || it.activeInWeek(week) }
+        .filter { effectiveWeek <= 0 || it.activeInWeek(effectiveWeek) }
         .sortedBy { it.startPeriod }
 
     Column(
@@ -79,12 +86,20 @@ fun TodayScreen(
             Modifier.padding(horizontal = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            if (termStart == null) {
+            if (firstMonday == null) {
                 HintCard(
-                    title = "还没有设置开学日期",
-                    message = "在设置里填上第 1 周周一的日期，就能自动判断“今天第几周”，课表也会按周高亮。",
+                    title = "还没告诉 App 第 1 周是哪一天",
+                    message = "课表文件里没有日期，只有「第几周有课」。填上第 1 周周一的日期，" +
+                        "今天的时间才能和课程对上（注意别填成开学日或军训周）。",
                     actionText = "去设置",
                     onAction = onOpenSettings,
+                )
+            } else if (previewingFirstWeek) {
+                HintCard(
+                    title = "今天不在教学周内",
+                    message = "${WeekUtils.formatMonthDay(today)} 还没到第 1 周（第 1 周 " +
+                        "${WeekUtils.weekRangeLabel(1, firstMonday)}）。下面按第 1 周 " +
+                        "${WeekUtils.weekdayLongLabel(weekday)} 的课表预览，不是今天的课。",
                 )
             }
 
@@ -95,19 +110,24 @@ fun TodayScreen(
 
             if (todayCourses.isEmpty()) {
                 EmptyState(
-                    title = "今天没有课",
-                    subtitle = if (week > 0) "第 $week 周 ${WeekUtils.weekdayLongLabel(weekday)} 没有安排课程，好好休息。" else "今天没有安排课程。",
+                    title = if (previewingFirstWeek) "第 1 周这一天没有课" else "今天没有课",
+                    subtitle = if (effectiveWeek > 0) {
+                        "第 $effectiveWeek 周 ${WeekUtils.weekdayLongLabel(weekday)} 没有安排课程，好好休息。"
+                    } else {
+                        "今天没有安排课程。"
+                    },
                     glyph = Glyph.Today,
                 )
                 return@Column
             }
 
-            val current = todayCourses.firstOrNull { course ->
+            // 预览第 1 周时不谈“正在上课/还剩多久”，那些只对真正的今天有意义
+            val current = if (previewingFirstWeek) null else todayCourses.firstOrNull { course ->
                 val start = courseStart(course, settings.periods)
                 val end = courseEnd(course, settings.periods)
                 start >= 0 && nowMinutes in start until end
             }
-            val next = todayCourses.firstOrNull { course ->
+            val next = if (previewingFirstWeek) null else todayCourses.firstOrNull { course ->
                 courseStart(course, settings.periods) > nowMinutes
             }
 
@@ -127,20 +147,26 @@ fun TodayScreen(
                     trailing = "${WeekUtils.formatDuration(courseStart(next, settings.periods) - nowMinutes)}后开始",
                     onClick = { onCourseClick(next) },
                 )
-            } else {
+            } else if (!previewingFirstWeek) {
                 HintCard(
                     title = "今天的课都上完了",
                     message = "共 ${todayCourses.size} 节课，收工。",
                 )
             }
 
-            SectionLabel("今日课程（${todayCourses.size}）")
+            SectionLabel(
+                if (previewingFirstWeek) {
+                    "第 1 周 ${WeekUtils.weekdayLabel(weekday)}的课（${todayCourses.size}）"
+                } else {
+                    "今日课程（${todayCourses.size}）"
+                }
+            )
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 todayCourses.forEach { course ->
                     TodayCourseRow(
                         course = course,
                         periods = settings.periods,
-                        isPast = courseEnd(course, settings.periods) in 1 until nowMinutes,
+                        isPast = !previewingFirstWeek && courseEnd(course, settings.periods) in 1 until nowMinutes,
                         isCurrent = current != null && current.id == course.id,
                         onClick = { onCourseClick(course) },
                     )
