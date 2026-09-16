@@ -133,7 +133,61 @@ class UpdateCheckerTest {
         )
     }
 
+    @Test
+    fun giteeNewerUpdateIsLabeledAsGitee() {
+        // 回归：曾经把 buildUpdate 的参数顺序写反，导致 Gitee 的地址被标成「GitHub 直连」
+        val gitee = found("v1.2.2", "gitee", GITEE_APK, "Gitee 直连")
+
+        val update = UpdateChecker.buildUpdate(github = null, gitee = gitee, currentVersion = "1.2.1")
+
+        assertEquals("1.2.2", update?.version)
+        assertEquals(listOf("Gitee 直连|$GITEE_APK"), update?.downloads?.map { "${it.label}|${it.url}" })
+    }
+
+    @Test
+    fun githubNewerUpdateKeepsBothSourcesWhenSameTag() {
+        val gitee = found("v1.2.2", "gitee", GITEE_APK, "Gitee 直连")
+        val github = found("v1.2.2", "github", GITHUB_APK, "GitHub 直连")
+
+        val update = UpdateChecker.buildUpdate(github = github, gitee = gitee, currentVersion = "1.2.1")
+
+        assertEquals("1.2.2", update?.version)
+        assertEquals(listOf("Gitee 直连", "GitHub 直连"), update?.downloads?.map { it.label })
+        assertEquals(listOf(GITEE_APK, GITHUB_APK), update?.downloads?.map { it.url })
+    }
+
+    @Test
+    fun newerGithubWinsWhenGiteeIsBehind() {
+        val gitee = found("v1.2.1", "gitee", GITEE_APK, "Gitee 直连")
+        val github = found("v1.2.2", "github", GITHUB_APK, "GitHub 直连")
+
+        val update = UpdateChecker.buildUpdate(github = github, gitee = gitee, currentVersion = "1.2.1")
+
+        assertEquals("1.2.2", update?.version)
+        // Gitee 只有旧版本，不能混进来当下载源
+        assertEquals(listOf("GitHub 直连|$GITHUB_APK"), update?.downloads?.map { "${it.label}|${it.url}" })
+    }
+
+    @Test
+    fun noUpdateWhenBothAreOlderOrEqual() {
+        val gitee = found("v1.2.1", "gitee", GITEE_APK, "Gitee 直连")
+        val github = found("v1.1.0", "github", GITHUB_APK, "GitHub 直连")
+
+        assertEquals(null, UpdateChecker.buildUpdate(github = github, gitee = gitee, currentVersion = "1.2.1"))
+    }
+
+    private fun found(tag: String, notes: String, apkUrl: String, label: String) = UpdateChecker.Found(
+        tag = tag,
+        notes = notes,
+        pageUrl = "https://example.com/$tag",
+        apkUrls = listOf(apkUrl),
+        label = label,
+    )
+
     private companion object {
+        const val GITEE_APK = "https://gitee.com/jingoujiao/ccsut-schedule/releases/download/v1.2.2/app.apk"
+        const val GITHUB_APK = "https://github.com/jingoujiao/ccsutSchedule/releases/download/v1.2.2/app.apk"
+
         val RELEASE_JSON = """
             {
               "tag_name": "v1.2.0",

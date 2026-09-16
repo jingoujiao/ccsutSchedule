@@ -65,7 +65,7 @@ object UpdateChecker {
         val size: Long = 0,
     )
 
-    private data class Found(
+    internal data class Found(
         val tag: String,
         val notes: String,
         val pageUrl: String,
@@ -100,7 +100,7 @@ object UpdateChecker {
                 // Gitee 上已经有当前（或更新）的版本，结论已足够，不用再等 GitHub
                 githubDeferred.cancel()
                 return@coroutineScope if (isNewerVersion(gitee.tag, currentVersion)) {
-                    buildUpdate(gitee, null, currentVersion)
+                    buildUpdate(github = null, gitee = gitee, currentVersion = currentVersion)
                 } else {
                     null
                 }
@@ -114,31 +114,32 @@ object UpdateChecker {
                     ?: githubOutcome.exceptionOrNull()
                     ?: NoReleasePublished()
             }
-            buildUpdate(github, gitee, currentVersion)
+            buildUpdate(github = github, gitee = gitee, currentVersion = currentVersion)
         }
 
-    private fun buildUpdate(github: Found?, gitee: Found?, currentVersion: String): Update? {
+    internal fun buildUpdate(github: Found?, gitee: Found?, currentVersion: String): Update? {
         val githubNewer = github != null && isNewerVersion(github.tag, currentVersion)
         val giteeNewer = gitee != null && isNewerVersion(gitee.tag, currentVersion)
         if (!githubNewer && !giteeNewer) return null
 
+        // 走到这里两边至少有一个是「比当前版本新」的非空结果；只有一边有结果时就用那一边，
+        // 两边都有就比 tag（tag 相同时选 GitHub，但下载候选会把两边都带上）。
         val chosen = when {
-            giteeNewer && !githubNewer -> gitee!!
-            githubNewer && !giteeNewer -> github!!
-            isNewerVersion(gitee!!.tag, github!!.tag) -> gitee
+            gitee == null -> requireNotNull(github)
+            github == null -> gitee
+            isNewerVersion(gitee.tag, github.tag) -> gitee
             else -> github
         }
 
-        // 下载候选：优先 Gitee；两边 tag 相同时互为备份
+        // 下载候选：永远 Gitee 在前（国内快）；非选中那一边只有在 tag 相同时才作为备份加进来
+        val giteeSameTag = gitee?.takeIf { it.tag == chosen.tag }
+        val githubSameTag = github?.takeIf { it.tag == chosen.tag }
         val downloads = buildList {
-            if (chosen === gitee) gitee.apkUrls.forEach { add(DownloadSource(GITEE_LABEL, it)) }
-            if (chosen === github) github.apkUrls.forEach { add(DownloadSource(GITHUB_LABEL, it)) }
-            val other = if (chosen === gitee) github else gitee
-            if (other != null && other.tag == chosen.tag) {
-                other.apkUrls.forEach { add(DownloadSource(other.label, it)) }
-            }
+            giteeSameTag?.apkUrls?.forEach { add(DownloadSource(GITEE_LABEL, it)) }
+            githubSameTag?.apkUrls?.forEach { add(DownloadSource(GITHUB_LABEL, it)) }
         }
 
+        // 注意：buildUpdate 是纯函数（有单测），不要在这里调用 android.util.Log
         return Update(
             version = chosen.tag.removePrefix("v"),
             notes = chosen.notes,

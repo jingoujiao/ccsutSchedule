@@ -73,7 +73,7 @@ fun TimeSettingsPage(
                 onClick = { showDatePicker = true },
                 trailing = { Chevron() },
             )
-            if (misaligned && storedFirstDay != null && firstMonday != null) {
+            if (misaligned) {
                 SettingRow(
                     title = "存的 ${WeekUtils.formatMonthDay(storedFirstDay)} 是" +
                         WeekUtils.weekdayLongLabel(storedFirstDay.dayOfWeek.value) + "，已按周一算",
