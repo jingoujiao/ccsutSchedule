@@ -76,31 +76,44 @@ object UpdateChecker {
     /**
      * 检查是否有新版本：返回 null 表示已是最新。
      *
-     * Gitee 与 GitHub 并行查：Gitee 国内快，只要它已经有更新的版本就直接用它、不再等 GitHub
-     * （GitHub 的 API 在国内经常要等到超时）；否则以 GitHub 的结果为准。
-     * 下载地址也把两边的都带上（Gitee 优先）。
+     * Gitee 与 GitHub 并行查（都在 IO 线程上）：
+     * - Gitee 上已经能给出结论（有当前或更新的版本）时就直接用它，不再等 GitHub
+     *   —— GitHub 的 API 在国内经常要等到超时，而 Gitee 通常一两秒就有结果；
+     * - Gitee 没有 Release 或版本落后时，以 GitHub 为准。
+     * 下载地址把两边都带上（Gitee 优先）。
      */
     suspend fun checkLatest(currentVersion: String, giteeRepo: String = GITEE_REPO): Update? =
         coroutineScope {
             val repo = giteeRepo.trim().trim('/').takeIf { it.isNotEmpty() }
-            val githubDeferred = async {
-                runCatching { fetch(GITHUB_API_URL, GITHUB_LABEL, REPO_URL) }.getOrNull()
+            val githubDeferred = async(Dispatchers.IO) {
+                runCatching { fetch(GITHUB_API_URL, GITHUB_LABEL, REPO_URL) }
             }
-            val giteeDeferred = repo?.let {
-                async {
-                    runCatching { fetch(giteeApiUrl(it), GITEE_LABEL, "https://gitee.com/$it") }.getOrNull()
+            val giteeDeferred = repo?.let { path ->
+                async(Dispatchers.IO) {
+                    runCatching { fetch(giteeApiUrl(path), GITEE_LABEL, "https://gitee.com/$path") }
                 }
             }
 
-            val gitee = giteeDeferred?.await()
-            if (gitee != null && isNewerVersion(gitee.tag, currentVersion) && gitee.apkUrls.isNotEmpty()) {
-                // Gitee 上就有可下载的新版本，不用再等 GitHub
+            val giteeOutcome = giteeDeferred?.await()
+            val gitee = giteeOutcome?.getOrNull()
+            if (gitee != null && !isNewerVersion(currentVersion, gitee.tag)) {
+                // Gitee 上已经有当前（或更新）的版本，结论已足够，不用再等 GitHub
                 githubDeferred.cancel()
-                return@coroutineScope buildUpdate(gitee, null, currentVersion)
+                return@coroutineScope if (isNewerVersion(gitee.tag, currentVersion)) {
+                    buildUpdate(gitee, null, currentVersion)
+                } else {
+                    null
+                }
             }
 
-            val github = githubDeferred.await()
-            if (github == null && gitee == null) throw NoReleasePublished()
+            val githubOutcome = githubDeferred.await()
+            val github = githubOutcome.getOrNull()
+            if (github == null && gitee == null) {
+                // 两边都拿不到：把真正的失败原因抛出去，别一律说「没有发布版本」
+                throw giteeOutcome?.exceptionOrNull()
+                    ?: githubOutcome.exceptionOrNull()
+                    ?: NoReleasePublished()
+            }
             buildUpdate(github, gitee, currentVersion)
         }
 

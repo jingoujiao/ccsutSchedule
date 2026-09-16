@@ -143,15 +143,15 @@ private fun AppRoot(repo: ScheduleRepository) {
                     }
                 },
                 onFailure = { error ->
-                    updateUi = if (silent) {
-                        UpdateUi.Idle
-                    } else if (error is UpdateChecker.NoReleasePublished) {
-                        UpdateUi.NoRelease
-                    } else {
-                        UpdateUi.Failed("检查失败：${error.message ?: "网络不可用"}")
+                    updateUi = when {
+                        silent -> UpdateUi.Idle
+                        error is UpdateChecker.NoReleasePublished -> UpdateUi.NoRelease
+                        error is java.net.UnknownHostException ||
+                            error is java.net.SocketTimeoutException ||
+                            error is java.net.ConnectException -> UpdateUi.Failed("网络不可用，请稍后重试")
+                        else -> UpdateUi.Failed("检查失败：${error.message ?: "网络不可用"}")
                     }
-                },
-            )
+                },            )
         }
     }
 
