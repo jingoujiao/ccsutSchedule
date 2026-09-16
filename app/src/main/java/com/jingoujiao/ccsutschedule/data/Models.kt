@@ -148,13 +148,9 @@ val LEGACY_DEFAULT_PERIOD_TIMES: List<PeriodTime> = listOf(
 )
 
 /**
- * 作息分段：在第 N 节之后画一条分界线，并标出接下来这一段的名称。
- * 用来把「上午 / 下午 / 晚上」在课表上区分开。
+ * 作息分段：在第 N 节之后画一条跨整行的分界线，把上午 / 下午 / 晚上区分开。
  */
-val SECTION_BREAKS: List<Pair<Int, String>> = listOf(
-    4 to "下午",
-    8 to "晚上",
-)
+val SECTION_BREAKS: List<Int> = listOf(4, 8)
 
 /** 配色方案预设：只存主色相，具体色板由色相推导。 */
 object PalettePresets {

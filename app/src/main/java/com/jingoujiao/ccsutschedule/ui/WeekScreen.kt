@@ -569,10 +569,10 @@ private fun GridBody(
             }
             Box(Modifier.width(2.dp).height(cellHeight * maxPeriod))
             }
-            // 上午 / 下午 / 晚上 的分界线（只画不占高度，保证各列节次仍对齐）
-            SECTION_BREAKS.forEach { (afterPeriod, label) ->
+            // 上午 / 下午 / 晚上的分界线（只画线不占高度，保证各列节次仍对齐）
+            SECTION_BREAKS.forEach { afterPeriod ->
                 if (afterPeriod < maxPeriod) {
-                    SectionDivider(offsetY = cellHeight * afterPeriod, label = label)
+                    SectionDivider(offsetY = cellHeight * afterPeriod)
                 }
             }
         }
@@ -581,9 +581,9 @@ private fun GridBody(
     }
 }
 
-/** 跨整行的一条分界线 + 一个小标签，用来区分上午 / 下午 / 晚上。 */
+/** 跨整行的一条细分界线，用来区分上午 / 下午 / 晚上。 */
 @Composable
-private fun SectionDivider(offsetY: androidx.compose.ui.unit.Dp, label: String) {
+private fun SectionDivider(offsetY: androidx.compose.ui.unit.Dp) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -595,19 +595,6 @@ private fun SectionDivider(offsetY: androidx.compose.ui.unit.Dp, label: String) 
                 .height(1.dp)
                 .background(MaterialTheme.colorScheme.outlineVariant)
         )
-        Box(
-            Modifier
-                .padding(start = 6.dp, top = 3.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
-                .padding(horizontal = 6.dp, vertical = 1.dp)
-        ) {
-            Text(
-                text = label,
-                fontSize = 9.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
     }
 }
 
