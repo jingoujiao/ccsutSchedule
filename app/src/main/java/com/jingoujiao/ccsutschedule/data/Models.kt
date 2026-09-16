@@ -97,6 +97,8 @@ data class AppSettings(
     val backgroundAlpha: Float = 0.28f,
     /** 是否在网格里用淡色显示非本周课程。 */
     val showOtherWeeks: Boolean = false,
+    /** 启动时自动检查更新。 */
+    val autoCheckUpdates: Boolean = true,
 )
 
 @Serializable

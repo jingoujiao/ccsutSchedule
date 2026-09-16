@@ -50,6 +50,7 @@ import com.jingoujiao.ccsutschedule.data.Course
 import com.jingoujiao.ccsutschedule.data.CourseFactory
 import com.jingoujiao.ccsutschedule.data.ScheduleData
 import com.jingoujiao.ccsutschedule.data.ScheduleRepository
+import com.jingoujiao.ccsutschedule.data.UpdateChecker
 import com.jingoujiao.ccsutschedule.data.WeekUtils
 import com.jingoujiao.ccsutschedule.data.XskbParser
 import com.jingoujiao.ccsutschedule.ui.AppBackground
@@ -59,9 +60,12 @@ import com.jingoujiao.ccsutschedule.ui.CourseEditorScreen
 import com.jingoujiao.ccsutschedule.ui.Glyph
 import com.jingoujiao.ccsutschedule.ui.GlyphIcon
 import com.jingoujiao.ccsutschedule.ui.ImportScreen
-import com.jingoujiao.ccsutschedule.ui.SettingsScreen
 import com.jingoujiao.ccsutschedule.ui.TodayScreen
+import com.jingoujiao.ccsutschedule.ui.UpdateDialog
+import com.jingoujiao.ccsutschedule.ui.UpdateUi
 import com.jingoujiao.ccsutschedule.ui.WeekScreen
+import com.jingoujiao.ccsutschedule.ui.settings.SettingsPage
+import com.jingoujiao.ccsutschedule.ui.settings.SettingsScreen
 import com.jingoujiao.ccsutschedule.ui.theme.CcsutTheme
 import java.io.File
 import java.time.LocalDate
@@ -100,12 +104,15 @@ private fun AppRoot(repo: ScheduleRepository) {
     var tab by remember { mutableStateOf(0) }
     var selectedWeek by remember { mutableStateOf(-1) }
     var overlay by remember { mutableStateOf<Overlay?>(null) }
+    var settingsPage by remember { mutableStateOf<SettingsPage?>(null) }
+    var updateUi by remember { mutableStateOf<UpdateUi>(UpdateUi.Idle) }
     var detailCourseId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<Course?>(null) }
     var clearConfirm by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var importUi by remember { mutableStateOf(ImportUi()) }
     var pendingSlot by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+    val versionName = remember { UpdateChecker.currentVersionName(context) }
 
     val today = LocalDate.now()
     val firstMonday = WeekUtils.firstWeekMonday(state.settings.firstWeekMonday)
@@ -122,6 +129,55 @@ private fun AppRoot(repo: ScheduleRepository) {
 
     fun toast(text: String) {
         message = text
+    }
+
+    fun checkUpdate(silent: Boolean) {
+        scope.launch {
+            updateUi = UpdateUi.Checking
+            runCatching { UpdateChecker.checkLatest(versionName) }.fold(
+                onSuccess = { update ->
+                    updateUi = when {
+                        update != null -> UpdateUi.Found(update)
+                        silent -> UpdateUi.Idle
+                        else -> UpdateUi.UpToDate
+                    }
+                },
+                onFailure = { error ->
+                    updateUi = if (silent) {
+                        UpdateUi.Idle
+                    } else if (error is UpdateChecker.NoReleasePublished) {
+                        UpdateUi.NoRelease
+                    } else {
+                        UpdateUi.Failed("检查失败：${error.message ?: "网络不可用"}")
+                    }
+                },
+            )
+        }
+    }
+
+    fun downloadUpdate(update: UpdateChecker.Update) {
+        val url = update.downloadUrl
+        if (url == null) {
+            UpdateChecker.openUrl(context, update.pageUrl)
+            updateUi = UpdateUi.Idle
+            return
+        }
+        scope.launch {
+            updateUi = UpdateUi.Downloading(0f)
+            runCatching {
+                UpdateChecker.downloadApk(context, url, update.version) { progress ->
+                    updateUi = UpdateUi.Downloading(progress)
+                }
+            }.fold(
+                onSuccess = { file -> updateUi = UpdateUi.Ready(file) },
+                onFailure = { error -> updateUi = UpdateUi.Failed("下载失败：${error.message ?: "网络不可用"}") },
+            )
+        }
+    }
+
+    // 启动时自动检查一次（可在「设置 → 常规」关闭）
+    LaunchedEffect(Unit) {
+        if (state.settings.autoCheckUpdates) checkUpdate(silent = true)
     }
 
     val xskbPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -187,6 +243,10 @@ private fun AppRoot(repo: ScheduleRepository) {
 
                             else -> SettingsScreen(
                                 state = state,
+                                page = settingsPage,
+                                versionName = versionName,
+                                updateUi = updateUi,
+                                onNavigate = { settingsPage = it },
                                 onUpdateSettings = { block -> repo.updateSettings(block) },
                                 onUpdateTitle = { title -> repo.updateTitle(title) },
                                 onOpenImport = { overlay = Overlay.Import },
@@ -205,6 +265,9 @@ private fun AppRoot(repo: ScheduleRepository) {
                                     if (old.isNotBlank()) runCatching { File(old).delete() }
                                     toast("背景已清除")
                                 },
+                                onCheckUpdate = { checkUpdate(silent = false) },
+                                onDownloadUpdate = { update -> downloadUpdate(update) },
+                                onOpenUrl = { url -> UpdateChecker.openUrl(context, url) },
                             )
                         }
                     }
@@ -366,6 +429,18 @@ private fun AppRoot(repo: ScheduleRepository) {
                     )
                 }
 
+                // 更新提示
+                UpdateDialog(
+                    state = updateUi,
+                    onDownload = { (updateUi as? UpdateUi.Found)?.update?.let { downloadUpdate(it) } },
+                    onInstall = { (updateUi as? UpdateUi.Ready)?.let { UpdateChecker.installApk(context, it.file) } },
+                    onOpenPage = {
+                        (updateUi as? UpdateUi.Found)?.update?.let { UpdateChecker.openUrl(context, it.pageUrl) }
+                        updateUi = UpdateUi.Idle
+                    },
+                    onDismiss = { updateUi = UpdateUi.Idle },
+                )
+
                 // 轻提示
                 AnimatedVisibility(
                     visible = message != null,
@@ -398,7 +473,7 @@ private fun AppRoot(repo: ScheduleRepository) {
         }
     }
 
-    BackHandler(enabled = overlay != null || detailCourseId != null || tab != 0) {
+    BackHandler(enabled = overlay != null || detailCourseId != null || tab != 0 || settingsPage != null) {
         when {
             overlay != null -> {
                 overlay = null
@@ -406,6 +481,7 @@ private fun AppRoot(repo: ScheduleRepository) {
             }
 
             detailCourseId != null -> detailCourseId = null
+            settingsPage != null -> settingsPage = null
             else -> tab = 0
         }
     }

@@ -41,7 +41,7 @@ Kotlin + Jetpack Compose 从零实现，无第三方 UI 库、无网络请求、
 
 ## 数据与隐私
 
-- 课表、设置全部存在 App 私有目录 `files/data/ccsut-schedule.json`，**不联网**。
+- 课表、设置全部存在 App 私有目录 `files/data/ccsut-schedule.json`，**不联网**（只有检查更新访问 GitHub）。
 - 导入的 `xskb.xlsx` 只在本机解析，解析完不保留原文件。
 - 仓库**不包含**任何个人课表数据；`xskb.xlsx` 已在 `.gitignore` 中排除。
 
@@ -52,22 +52,54 @@ Kotlin + Jetpack Compose 从零实现，无第三方 UI 库、无网络请求、
 ```powershell
 $env:JAVA_HOME='C:\Users\<你>\.jdks\java-21'
 $env:ANDROID_HOME='D:\Android\Sdk'
-.\gradlew.bat :app:assembleDebug
+.\gradlew.bat :app:assembleDebug      # 调试包：com.jingoujiao.ccsutschedule.debug
+.\gradlew.bat :app:testDebugUnitTest  # 单元测试
 ```
 
-产物：`app/build/outputs/apk/debug/app-debug.apk`（包名 `com.jingoujiao.ccsutschedule.debug`）。
-
-跑单元测试（解析器 / 周次 / 日期换算）：
+正式包需要签名（没配置签名也能构建，只是产物未签名）：
 
 ```powershell
-.\gradlew.bat :app:testDebugUnitTest
+.\gradlew.bat :app:assembleRelease `
+  -Pccsut.releaseStoreFile=D:/path/ccsut-release.keystore `
+  -Pccsut.releaseStorePassword=****** `
+  -Pccsut.releaseKeyAlias=ccsut `
+  -Pccsut.releaseKeyPassword=******
 ```
+
+也可以用环境变量 `CCSUT_RELEASE_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD`。
+keystore 与密码**不要提交**（`tmp/` 已在 .gitignore 里）。
+
+## 发布新版本（应用内更新依赖这几条）
+
+应用内「设置 → 常规 → 检查更新」走的是 GitHub Releases 的 `releases/latest` 接口，所以：
+
+1. 仓库必须是**公开**的（私有仓库和没有 Release 都会返回 404，App 会提示「仓库还没有发布正式版本」）；
+2. 新建 Release 时 **tag 用 `vX.Y.Z`**（例如 `v1.1.0`），版本号要比用户当前装的大；
+3. **上传的资产文件名必须以 `.apk` 结尾**（例如 `ccsutSchedule-1.1.0.apk`），App 会自动挑第一个 `.apk` 资产下载；
+4. 每次发版同时把 `versionCode` 加 1、`versionName` 改成对应版本（见 `app/build.gradle.kts`）。
+
+App 侧行为：「检查更新」手动检查；「自动检查更新」在启动时静默检查一次，发现新版本会弹窗，
+点「下载并安装」→ 下载 APK 到 cache → 交给系统安装器（首次需要在系统里允许本应用安装未知来源应用）。
+
+权限只有两个：`INTERNET`（仅访问 GitHub Releases）与 `REQUEST_INSTALL_PACKAGES`（安装下载的更新包）。
+
+## 设置结构
+
+| 页面 | 内容 |
+| --- | --- |
+| 关于（最上） | 版本、作者 jingoujiao、项目仓库、反馈问题（GitHub Issues）、隐私说明 |
+| 课程 | 课表名称、导入 xskb.xlsx、手动添加课程、清空课表 |
+| 外观 | 主题模式、配色方案、自定义背景、显示非本周课程 |
+| 时间 | 课表第 1 周的周一、学期总周数、作息时间表 |
+| 常规 | 自动检查更新、检查更新、当前版本 |
+
+## 数据与隐私
 
 ## 已做过的验收（2026-09-16）
 
 | 项目 | 结果 |
 | --- | --- |
-| 单元测试 `:app:testDebugUnitTest` | 27/27 通过（周次与日期换算 9 + xskb 端到端 10 + 本机真实文件体检 1 + 存储与作息迁移 7），`--rerun-tasks` 强制重跑确认非陈旧结果 |
+| 单元测试 `:app:testDebugUnitTest` | 37/37 通过（周次与日期换算 9 + xskb 端到端 13 + 本机真实文件体检 1 + 存储与作息迁移 7 + 更新检查 7），`--rerun-tasks` 强制重跑确认非陈旧结果 |
 | 真实 `xskb.xlsx` 解析 | 22 个课程块、节次 1-8、周次 3-19、周一~周六，逐条与源文件核对一致，零告警 |
 | 模拟器（Android 36 / API 36） | 导入流程（选文件 → 预览 → 覆盖导入）、落库 JSON 22 条、第 6/8 周网格与源文件逐格一致、箭头切周后日期联动（第 8 周 → 9/28~10/4）、周三与当前节次高亮、课程详情、手动加课（第 23 条落库）、删除（回到 22 条）、今日页“正在上课·还剩 12 分”倒计时、设置页开学日期改写后自动算出“第 6 周”、深浅色切换，全部实测通过 |
 | APK | `:app:assembleDebug` 成功，产物约 12 MB，`adb install` 在本机模拟器安装并启动无崩溃 |
