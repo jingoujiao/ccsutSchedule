@@ -40,7 +40,7 @@ fun TodayScreen(
     state: AppStateData,
     today: LocalDate,
     onCourseClick: (Course) -> Unit,
-    onOpenWeek: () -> Unit,
+    onBack: () -> Unit,
     onOpenSettings: () -> Unit,
 ) {
     val settings = state.settings
@@ -71,10 +71,8 @@ fun TodayScreen(
                     append(" 周")
                 }
             },
-            actions = {
-                IconAction(Glyph.Calendar, "回到课表", onOpenWeek)
-                IconAction(Glyph.Settings, "设置", onOpenSettings)
-            },
+            leading = { IconAction(Glyph.Back, "返回课表", onBack) },
+            actions = { IconAction(Glyph.Settings, "设置", onOpenSettings) },
         )
 
         Column(

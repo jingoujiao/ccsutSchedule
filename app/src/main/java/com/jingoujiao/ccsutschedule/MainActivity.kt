@@ -21,15 +21,15 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,7 +43,6 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -54,6 +53,7 @@ import com.jingoujiao.ccsutschedule.data.ScheduleRepository
 import com.jingoujiao.ccsutschedule.data.WeekUtils
 import com.jingoujiao.ccsutschedule.data.XskbParser
 import com.jingoujiao.ccsutschedule.ui.AppBackground
+import com.jingoujiao.ccsutschedule.ui.ConfirmDialog
 import com.jingoujiao.ccsutschedule.ui.CourseDetailSheet
 import com.jingoujiao.ccsutschedule.ui.CourseEditorScreen
 import com.jingoujiao.ccsutschedule.ui.Glyph
@@ -80,7 +80,7 @@ class MainActivity : ComponentActivity() {
 
 private sealed interface Overlay {
     data object Import : Overlay
-    data object Settings : Overlay
+    data object Today : Overlay
     data class Editor(val courseId: String?) : Overlay
 }
 
@@ -94,7 +94,7 @@ private data class ImportUi(
 @Composable
 private fun AppRoot(repo: ScheduleRepository) {
     val state by repo.state.collectAsState()
-    val context = LocalContext.current
+    val context = LocalContextCompat()
     val scope = rememberCoroutineScope()
 
     var tab by remember { mutableStateOf(0) }
@@ -102,6 +102,7 @@ private fun AppRoot(repo: ScheduleRepository) {
     var overlay by remember { mutableStateOf<Overlay?>(null) }
     var detailCourseId by remember { mutableStateOf<String?>(null) }
     var pendingDelete by remember { mutableStateOf<Course?>(null) }
+    var clearConfirm by remember { mutableStateOf(false) }
     var message by remember { mutableStateOf<String?>(null) }
     var importUi by remember { mutableStateOf(ImportUi()) }
     var pendingSlot by remember { mutableStateOf<Pair<Int, Int>?>(null) }
@@ -175,30 +176,51 @@ private fun AppRoot(repo: ScheduleRepository) {
                                     pendingSlot = weekday to period
                                     overlay = Overlay.Editor(null)
                                 },
+                                onOpenToday = { overlay = Overlay.Today },
                                 onOpenImport = { overlay = Overlay.Import },
-                                onOpenSettings = { overlay = Overlay.Settings },
                                 onAddManual = {
                                     pendingSlot = null
                                     overlay = Overlay.Editor(null)
                                 },
+                                onClearCourses = { clearConfirm = true },
                             )
 
-                            else -> TodayScreen(
+                            else -> SettingsScreen(
                                 state = state,
-                                today = today,
-                                onCourseClick = { detailCourseId = it.id },
-                                onOpenWeek = { tab = 0 },
-                                onOpenSettings = { overlay = Overlay.Settings },
+                                onUpdateSettings = { block -> repo.updateSettings(block) },
+                                onUpdateTitle = { title -> repo.updateTitle(title) },
+                                onOpenImport = { overlay = Overlay.Import },
+                                onAddCourse = {
+                                    pendingSlot = null
+                                    overlay = Overlay.Editor(null)
+                                },
+                                onClearCourses = {
+                                    repo.clearCourses()
+                                    toast("课表已清空")
+                                },
+                                onPickBackground = { backgroundPicker.launch(arrayOf("image/*")) },
+                                onClearBackground = {
+                                    val old = state.settings.backgroundImagePath
+                                    repo.updateSettings { it.copy(backgroundImagePath = "") }
+                                    if (old.isNotBlank()) runCatching { File(old).delete() }
+                                    toast("背景已清除")
+                                },
                             )
                         }
                     }
-                    BottomBar(
-                        selected = tab,
-                        onSelect = { tab = it },
-                    )
                 }
 
-                // 全屏覆盖页：导入 / 设置 / 课程编辑
+                // 悬浮胶囊导航：课程 / 设置
+                PillNavigation(
+                    selected = tab,
+                    onSelect = { tab = it },
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .windowInsetsPadding(WindowInsets.navigationBars)
+                        .padding(bottom = 14.dp),
+                )
+
+                // 全屏覆盖页：导入 / 今日 / 课程编辑
                 val current = overlay
                 AnimatedVisibility(
                     visible = current != null,
@@ -248,27 +270,15 @@ private fun AppRoot(repo: ScheduleRepository) {
                                 },
                             )
 
-                            Overlay.Settings -> SettingsScreen(
+                            Overlay.Today -> TodayScreen(
                                 state = state,
-                                onUpdateSettings = { block -> repo.updateSettings(block) },
-                                onUpdateTitle = { title -> repo.updateTitle(title) },
-                                onOpenImport = { overlay = Overlay.Import },
-                                onAddCourse = {
-                                    pendingSlot = null
-                                    overlay = Overlay.Editor(null)
-                                },
-                                onClearCourses = {
-                                    repo.clearCourses()
-                                    toast("课表已清空")
-                                },
-                                onPickBackground = { backgroundPicker.launch(arrayOf("image/*")) },
-                                onClearBackground = {
-                                    val old = state.settings.backgroundImagePath
-                                    repo.updateSettings { it.copy(backgroundImagePath = "") }
-                                    if (old.isNotBlank()) runCatching { File(old).delete() }
-                                    toast("背景已清除")
-                                },
+                                today = today,
+                                onCourseClick = { detailCourseId = it.id },
                                 onBack = { overlay = null },
+                                onOpenSettings = {
+                                    overlay = null
+                                    tab = 1
+                                },
                             )
 
                             is Overlay.Editor -> {
@@ -328,7 +338,7 @@ private fun AppRoot(repo: ScheduleRepository) {
 
                 if (pendingDelete != null) {
                     val target = pendingDelete!!
-                    com.jingoujiao.ccsutschedule.ui.ConfirmDialog(
+                    ConfirmDialog(
                         title = "删除课程",
                         message = "确定删除「${target.name.ifBlank { "未命名课程" }}」？",
                         confirmText = "删除",
@@ -342,6 +352,20 @@ private fun AppRoot(repo: ScheduleRepository) {
                     )
                 }
 
+                if (clearConfirm) {
+                    ConfirmDialog(
+                        title = "清空课表",
+                        message = "会删除全部 ${state.schedule.courses.size} 个课程块，此操作不可撤销。设置、作息与背景会保留。",
+                        confirmText = "清空",
+                        onConfirm = {
+                            repo.clearCourses()
+                            clearConfirm = false
+                            toast("课表已清空")
+                        },
+                        onDismiss = { clearConfirm = false },
+                    )
+                }
+
                 // 轻提示
                 AnimatedVisibility(
                     visible = message != null,
@@ -351,7 +375,7 @@ private fun AppRoot(repo: ScheduleRepository) {
                 ) {
                     Box(
                         Modifier
-                            .padding(bottom = 92.dp)
+                            .padding(bottom = 100.dp)
                             .windowInsetsPadding(WindowInsets.navigationBars)
                             .clip(RoundedCornerShape(14.dp))
                             .background(MaterialTheme.colorScheme.inverseSurface)
@@ -388,36 +412,65 @@ private fun AppRoot(repo: ScheduleRepository) {
 }
 
 @Composable
-private fun BottomBar(selected: Int, onSelect: (Int) -> Unit) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .background(MaterialTheme.colorScheme.surfaceContainerLow)
-            .padding(vertical = 8.dp),
-        horizontalArrangement = Arrangement.Center,
+private fun LocalContextCompat(): android.content.Context = androidx.compose.ui.platform.LocalContext.current
+
+/** 底部悬浮胶囊导航，对应示例图里的「课程 / 设置」。 */
+@Composable
+private fun PillNavigation(
+    selected: Int,
+    onSelect: (Int) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Surface(
+        modifier = modifier,
+        shape = RoundedCornerShape(30.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerLow,
+        shadowElevation = 6.dp,
+        border = androidx.compose.foundation.BorderStroke(
+            1.dp,
+            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
+        ),
     ) {
-        TabItem("课表", Glyph.Calendar, selected == 0) { onSelect(0) }
-        Spacer(Modifier.width(12.dp))
-        TabItem("今日", Glyph.Today, selected == 1) { onSelect(1) }
+        Row(
+            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+        ) {
+            PillNavItem("课程", Glyph.Calendar, selected == 0) { onSelect(0) }
+            PillNavItem("设置", Glyph.Settings, selected == 1) { onSelect(1) }
+        }
     }
 }
 
 @Composable
-private fun TabItem(label: String, glyph: Glyph, selected: Boolean, onClick: () -> Unit) {
+private fun PillNavItem(label: String, glyph: Glyph, selected: Boolean, onClick: () -> Unit) {
     val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-    Row(
+    Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(16.dp))
-            .background(
-                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.12f) else Color.Transparent
-            )
+            .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 22.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 18.dp, vertical = 6.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        GlyphIcon(glyph, color, size = 19.dp)
-        Spacer(Modifier.width(7.dp))
-        Text(label, fontSize = 14.sp, color = color, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+        Box(
+            modifier = Modifier
+                .size(30.dp)
+                .clip(RoundedCornerShape(10.dp))
+                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent),
+            contentAlignment = Alignment.Center,
+        ) {
+            GlyphIcon(
+                glyph = glyph,
+                tint = if (selected) MaterialTheme.colorScheme.onPrimary else color,
+                size = 18.dp,
+            )
+        }
+        Spacer(Modifier.width(2.dp))
+        Text(
+            text = label,
+            fontSize = 11.5.sp,
+            color = color,
+            fontWeight = if (selected) FontWeight.Medium else FontWeight.Normal,
+        )
     }
 }
 

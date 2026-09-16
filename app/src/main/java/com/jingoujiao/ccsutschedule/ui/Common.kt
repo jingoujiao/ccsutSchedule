@@ -51,6 +51,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.AppSettings
@@ -156,6 +157,60 @@ fun IconAction(glyph: Glyph, contentDescription: String, onClick: () -> Unit, ti
             tint = tint ?: MaterialTheme.colorScheme.onSurfaceVariant,
             size = 21.dp,
         )
+    }
+}
+
+@Composable
+fun CircleIconButton(
+    glyph: Glyph,
+    contentDescription: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    size: Dp = 40.dp,
+    container: Color = MaterialTheme.colorScheme.surfaceContainerLow,
+    borderColor: Color = MaterialTheme.colorScheme.outlineVariant,
+    tint: Color = MaterialTheme.colorScheme.onSurface,
+) {
+    Box(
+        modifier = modifier
+            .size(size)
+            .clip(CircleShape)
+            .background(container)
+            .border(1.dp, borderColor, CircleShape)
+            .clickable(onClick = onClick)
+            .semantics { this.contentDescription = contentDescription },
+        contentAlignment = Alignment.Center,
+    ) {
+        GlyphIcon(glyph, tint, size = size * 0.5f)
+    }
+}
+
+/** 「…」菜单：底部弹层式操作列表，比下拉菜单更好点。 */
+@Composable
+fun ActionSheet(
+    visible: Boolean,
+    title: String,
+    actions: List<Pair<String, () -> Unit>>,
+    onDismiss: () -> Unit,
+) {
+    CcsutSheet(visible = visible, onDismiss = onDismiss) {
+        Text(title, fontSize = 15.sp, fontWeight = FontWeight.Medium, color = MaterialTheme.colorScheme.onSurface)
+        Spacer(Modifier.height(6.dp))
+        actions.forEach { (label, action) ->
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable {
+                        onDismiss()
+                        action()
+                    }
+                    .padding(horizontal = 6.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(label, fontSize = 15.sp, color = MaterialTheme.colorScheme.onSurface)
+            }
+        }
     }
 }
 

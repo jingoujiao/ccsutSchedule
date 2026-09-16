@@ -56,7 +56,6 @@ fun SettingsScreen(
     onClearCourses: () -> Unit,
     onPickBackground: () -> Unit,
     onClearBackground: () -> Unit,
-    onBack: () -> Unit,
 ) {
     val settings = state.settings
     var showDatePicker by remember { mutableStateOf(false) }
@@ -68,7 +67,6 @@ fun SettingsScreen(
         ScreenHeader(
             title = "设置",
             subtitle = "作息、学期与外观都在这里",
-            leading = { IconAction(Glyph.Back, "返回", onBack) },
         )
 
         Column(
@@ -246,7 +244,7 @@ fun SettingsScreen(
                     modifier = Modifier.padding(horizontal = 14.dp, vertical = 6.dp),
                 )
             }
-            Spacer(Modifier.height(34.dp))
+            Spacer(Modifier.height(110.dp))
         }
     }
 
