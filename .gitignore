@@ -1,0 +1,17 @@
+*.iml
+.gradle/
+/local.properties
+/.idea/
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+local.properties
+/app/build
+/tmp/
+*.hprof
+
+# 个人课表数据，不入库
+xskb.xlsx
+*.xlsx
