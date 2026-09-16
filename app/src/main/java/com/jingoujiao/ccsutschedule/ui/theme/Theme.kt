@@ -7,9 +7,12 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.platform.LocalView
+import androidx.core.view.WindowCompat
 import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.COURSE_COLOR_COUNT
 import com.jingoujiao.ccsutschedule.data.ThemeMode
@@ -135,9 +138,28 @@ fun CcsutTheme(
         else -> isSystemInDarkTheme()
     }
     val scheme = buildColorScheme(settings.paletteHue, dark)
+
+    // 状态栏/导航栏图标颜色跟着主题走，否则浅色时白底白字看不见时间电量
+    val view = LocalView.current
+    if (!view.isInEditMode) {
+        SideEffect {
+            val window = view.context.findActivity()?.window ?: return@SideEffect
+            WindowCompat.getInsetsController(window, view).apply {
+                isAppearanceLightStatusBars = !dark
+                isAppearanceLightNavigationBars = !dark
+            }
+        }
+    }
+
     CompositionLocalProvider(LocalDarkTheme provides dark) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
+}
+
+private tailrec fun android.content.Context.findActivity(): android.app.Activity? = when (this) {
+    is android.app.Activity -> this
+    is android.content.ContextWrapper -> baseContext.findActivity()
+    else -> null
 }
 
 /** 判断某个颜色上应该配深色还是浅色文字。 */
