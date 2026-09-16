@@ -134,7 +134,7 @@ private fun AppRoot(repo: ScheduleRepository) {
     fun checkUpdate(silent: Boolean) {
         scope.launch {
             updateUi = UpdateUi.Checking
-            runCatching { UpdateChecker.checkLatest(versionName) }.fold(
+            runCatching { UpdateChecker.checkLatest(versionName, state.settings.giteeRepo) }.fold(
                 onSuccess = { update ->
                     updateUi = when {
                         update != null -> UpdateUi.Found(update)
@@ -156,18 +156,29 @@ private fun AppRoot(repo: ScheduleRepository) {
     }
 
     fun downloadUpdate(update: UpdateChecker.Update) {
-        val url = update.downloadUrl
-        if (url == null) {
+        if (update.downloads.isEmpty()) {
             UpdateChecker.openUrl(context, update.pageUrl)
             updateUi = UpdateUi.Idle
             return
         }
+        val sources = UpdateChecker.buildSources(
+            downloads = update.downloads,
+            source = state.settings.updateSource,
+            customMirror = state.settings.customMirror,
+        )
         scope.launch {
-            updateUi = UpdateUi.Downloading(0f)
+            updateUi = UpdateUi.Downloading(0f, probing = true)
             runCatching {
-                UpdateChecker.downloadApk(context, url, update.version) { progress ->
-                    updateUi = UpdateUi.Downloading(progress)
-                }
+                UpdateChecker.downloadApk(
+                    context = context,
+                    sources = sources,
+                    version = update.version,
+                    onSourceLabel = { label -> updateUi = UpdateUi.Downloading(0f, sourceLabel = label) },
+                    onProgress = { progress ->
+                        val label = (updateUi as? UpdateUi.Downloading)?.sourceLabel.orEmpty()
+                        updateUi = UpdateUi.Downloading(progress, sourceLabel = label, probing = false)
+                    },
+                )
             }.fold(
                 onSuccess = { file -> updateUi = UpdateUi.Ready(file) },
                 onFailure = { error -> updateUi = UpdateUi.Failed("下载失败：${error.message ?: "网络不可用"}") },
@@ -437,6 +448,12 @@ private fun AppRoot(repo: ScheduleRepository) {
                     onOpenPage = {
                         (updateUi as? UpdateUi.Found)?.update?.let { UpdateChecker.openUrl(context, it.pageUrl) }
                         updateUi = UpdateUi.Idle
+                    },
+                    onCopyLink = {
+                        (updateUi as? UpdateUi.Found)?.update?.downloadUrl?.let { url ->
+                            UpdateChecker.copyToClipboard(context, "更新包地址", url)
+                            toast("下载链接已复制")
+                        }
                     },
                     onDismiss = { updateUi = UpdateUi.Idle },
                 )

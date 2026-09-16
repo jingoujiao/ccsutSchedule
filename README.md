@@ -69,13 +69,29 @@ $env:ANDROID_HOME='D:\Android\Sdk'
 也可以用环境变量 `CCSUT_RELEASE_STORE_FILE / _STORE_PASSWORD / _KEY_ALIAS / _KEY_PASSWORD`。
 keystore 与密码**不要提交**（`tmp/` 已在 .gitignore 里）。
 
+## 更新源与国内加速
+
+GitHub 在国内直连常常只有几十 KB/s，所以更新做了双源 + 测速：
+
+- **检查更新**：Gitee 与 GitHub **并行**查。Gitee 上已经有可下载的新版本就直接用它，不再等 GitHub
+  （GitHub 的 API 在国内经常要等到超时）。
+- **下载**：候选顺序是 `Gitee 直连 → GitHub 直连 → 公共加速镜像 → 自定义前缀`，
+  先各读一小段测速挑最快的；下载过程中如果 10 秒内平均速度低于 40KB/s，**自动换下一个源**。
+- **设置 → 常规 → 更新包下载源** 可切换：自动（Gitee 优先 + 测速）/ Gitee 优先 / 只用 GitHub /
+  GitHub 镜像加速 / 自定义加速。Gitee 仓库默认 `jingoujiao/ccsut-schedule`，可在同一对话框里改。
+- 更新弹窗里还有「复制链接」，方便用浏览器或下载工具自己下。
+
+发版时建议 **Gitee 与 GitHub 发同一个版本号**（Gitee 供国内加速，GitHub 作为主仓库）；
+只有一边有 Release 也能正常更新，只是慢一点。
+
 ## 发布新版本（应用内更新依赖这几条）
 
-应用内「设置 → 常规 → 检查更新」走的是 GitHub Releases 的 `releases/latest` 接口，所以：
+应用内「设置 → 常规 → 检查更新」走的是 GitHub / Gitee 的 `releases/latest` 接口，所以：
 
 1. 仓库必须是**公开**的（私有仓库和没有 Release 都会返回 404，App 会提示「仓库还没有发布正式版本」）；
-2. 新建 Release 时 **tag 用 `vX.Y.Z`**（例如 `v1.1.0`），版本号要比用户当前装的大；
-3. **上传的资产文件名必须以 `.apk` 结尾**（例如 `ccsutSchedule-1.1.0.apk`），App 会自动挑第一个 `.apk` 资产下载；
+2. 新建 Release 时 **tag 用 `vX.Y.Z`**（例如 `v1.2.0`），版本号要比用户当前装的大；
+3. **上传的资产文件名必须以 `.apk` 结尾**（例如 `ccsutSchedule-1.2.0.apk`），App 会自动挑 `.apk` 资产下载；
+   Gitee 那边把同一个 APK 作为「附件」挂到 Release 上即可；
 4. 每次发版同时把 `versionCode` 加 1、`versionName` 改成对应版本（见 `app/build.gradle.kts`）。
 
 App 侧行为：「检查更新」手动检查；「自动检查更新」在启动时静默检查一次，发现新版本会弹窗，

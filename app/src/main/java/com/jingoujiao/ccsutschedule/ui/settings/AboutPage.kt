@@ -81,6 +81,13 @@ fun AboutPage(
                 trailing = { Chevron() },
             )
             SettingRow(
+                title = "Gitee 镜像",
+                subtitle = "gitee.com/jingoujiao/ccsut-schedule（国内下载更快）",
+                glyph = Glyph.Import,
+                onClick = { onOpenUrl(UpdateChecker.GITEE_REPO_URL) },
+                trailing = { Chevron() },
+            )
+            SettingRow(
                 title = "反馈问题",
                 subtitle = "GitHub Issues，点这里提 Issue",
                 glyph = Glyph.Warning,

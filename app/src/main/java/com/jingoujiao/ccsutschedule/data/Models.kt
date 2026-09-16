@@ -99,6 +99,12 @@ data class AppSettings(
     val showOtherWeeks: Boolean = false,
     /** 启动时自动检查更新。 */
     val autoCheckUpdates: Boolean = true,
+    /** 更新包下载源，见 [UpdateSource]。 */
+    val updateSource: String = UpdateSource.AUTO,
+    /** 自定义加速前缀（[UpdateSource.CUSTOM] 时使用）。 */
+    val customMirror: String = "",
+    /** Gitee 镜像仓库（owner/repo），为空表示没有镜像。 */
+    val giteeRepo: String = "jingoujiao/ccsut-schedule",
 )
 
 @Serializable
@@ -107,8 +113,41 @@ data class AppStateData(
     val settings: AppSettings = AppSettings(),
 )
 
-object ThemeMode {
-    const val SYSTEM = "system"
+/**
+ * 更新包下载源。
+ *
+ * GitHub 在国内直连常常很慢，所以：
+ *  - Gitee（码云）国内直连通常快得多，优先用它；
+ *  - 也可以用公共加速前缀下载（只是把原始地址拼在加速站后面）；
+ *  - 还可以自己填一个前缀（例如自建反代或学校镜像）。
+ */
+object UpdateSource {
+    const val AUTO = "auto"
+    const val GITEE = "gitee"
+    const val GITHUB = "github"
+    const val MIRROR = "mirror"
+    const val CUSTOM = "custom"
+
+    val all: List<String> = listOf(AUTO, GITEE, GITHUB, MIRROR, CUSTOM)
+
+    /** 内置的公共加速前缀，可能随时失效；失效时会自动换下一个。 */
+    val mirrors: List<Pair<String, String>> = listOf(
+        "ghfast.top" to "https://ghfast.top/",
+        "gh-proxy.com" to "https://gh-proxy.com/",
+        "ghproxy.net" to "https://ghproxy.net/",
+        "gh.llkk.cc" to "https://gh.llkk.cc/",
+    )
+
+    fun label(source: String): String = when (source) {
+        GITEE -> "Gitee 优先"
+        GITHUB -> "只用 GitHub"
+        MIRROR -> "GitHub 镜像加速"
+        CUSTOM -> "自定义加速"
+        else -> "自动（Gitee 优先 + 测速）"
+    }
+}
+
+object ThemeMode {    const val SYSTEM = "system"
     const val LIGHT = "light"
     const val DARK = "dark"
 

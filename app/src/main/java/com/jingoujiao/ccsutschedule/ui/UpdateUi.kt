@@ -1,6 +1,7 @@
 package com.jingoujiao.ccsutschedule.ui
 
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
@@ -26,7 +27,12 @@ sealed interface UpdateUi {
     data object NoRelease : UpdateUi
     data class Failed(val message: String) : UpdateUi
     data class Found(val update: UpdateChecker.Update) : UpdateUi
-    data class Downloading(val progress: Float) : UpdateUi
+    data class Downloading(
+        val progress: Float,
+        val sourceLabel: String = "",
+        val probing: Boolean = false,
+    ) : UpdateUi
+
     data class Ready(val file: File) : UpdateUi
 }
 
@@ -36,6 +42,7 @@ fun UpdateDialog(
     onDownload: () -> Unit,
     onInstall: () -> Unit,
     onOpenPage: () -> Unit,
+    onCopyLink: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     when (state) {
@@ -59,30 +66,45 @@ fun UpdateDialog(
                 },
                 confirmButton = {
                     TextButton(
-                        onClick = { if (update.downloadUrl != null) onDownload() else onOpenPage() }
+                        onClick = { if (update.downloads.isNotEmpty()) onDownload() else onOpenPage() }
                     ) {
-                        Text(if (update.downloadUrl != null) "下载并安装" else "打开下载页")
+                        Text(if (update.downloads.isNotEmpty()) "下载并安装" else "打开下载页")
                     }
                 },
-                dismissButton = { TextButton(onClick = onDismiss) { Text("稍后") } },
+                dismissButton = {
+                    Row {
+                        if (update.downloads.isNotEmpty()) {
+                            TextButton(onClick = onCopyLink) { Text("复制链接") }
+                        }
+                        TextButton(onClick = onDismiss) { Text("稍后") }
+                    }
+                },
             )
         }
 
         is UpdateUi.Downloading -> {
             AlertDialog(
                 onDismissRequest = {},
-                title = { Text("正在下载新版本") },
+                title = { Text(if (state.probing) "正在测速，选最快的源" else "正在下载新版本") },
                 text = {
                     Column {
-                        Text("${(state.progress * 100).toInt()}%", fontSize = 13.sp)
-                        Spacer(Modifier.height(10.dp))
-                        LinearProgressIndicator(
-                            progress = { state.progress },
-                            modifier = Modifier.height(6.dp),
-                        )
+                        if (state.probing) {
+                            LinearProgressIndicator(modifier = Modifier.height(6.dp))
+                        } else {
+                            Text("${(state.progress * 100).toInt()}%", fontSize = 13.sp)
+                            Spacer(Modifier.height(10.dp))
+                            LinearProgressIndicator(
+                                progress = { state.progress },
+                                modifier = Modifier.height(6.dp),
+                            )
+                        }
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            "请保持网络连接。",
+                            if (state.probing) {
+                                "GitHub 直连慢的话会自动换镜像加速"
+                            } else {
+                                "来源：${state.sourceLabel.ifBlank { "GitHub" }}"
+                            },
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
