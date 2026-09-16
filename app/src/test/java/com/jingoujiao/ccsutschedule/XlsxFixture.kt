@@ -10,7 +10,7 @@ import java.util.zip.ZipOutputStream
  */
 object XlsxFixture {
 
-    fun build(rows: List<List<String>>): ByteArray {
+    fun build(rows: List<List<String>>, merges: List<String> = emptyList()): ByteArray {
         val shared = LinkedHashMap<String, Int>()
         rows.forEach { row -> row.forEach { cell -> if (cell.isNotEmpty()) shared.getOrPut(cell) { shared.size } } }
 
@@ -56,6 +56,8 @@ object XlsxFixture {
                 """<?xml version="1.0" encoding="UTF-8"?>
                    <worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">
                      <sheetData>$sheetRows</sheetData>
+                     ${if (merges.isEmpty()) "" else "<mergeCells count=\"${merges.size}\">" +
+                    merges.joinToString("") { "<mergeCell ref=\"$it\"/>" } + "</mergeCells>"}
                    </worksheet>"""
             )
         }

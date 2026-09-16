@@ -124,6 +124,70 @@ class XskbParserTest {
     }
 
     @Test
+    fun parsesPeriodRanges() {
+        // 一行一节（本校当前导出）
+        assertEquals(listOf(1), XskbParser.parsePeriods("1.0"))
+        assertEquals(listOf(2), XskbParser.parsePeriods("2"))
+        assertEquals(listOf(10), XskbParser.parsePeriods("10.0"))
+        assertEquals(listOf(3), XskbParser.parsePeriods("第3节"))
+        // 一行两节（另一种导出写法）—— 之前只取第一个数字，导致两节连上的课只剩一节
+        assertEquals(listOf(1, 2), XskbParser.parsePeriods("1-2"))
+        assertEquals(listOf(5, 6), XskbParser.parsePeriods("第5-6节"))
+        assertEquals(listOf(5, 6), XskbParser.parsePeriods("5—6"))
+        assertEquals(listOf(1, 2), XskbParser.parsePeriods("1、2"))
+        assertEquals(listOf(7, 8), XskbParser.parsePeriods("7至8"))
+        assertEquals(emptyList<Int>(), XskbParser.parsePeriods("备注"))
+        assertEquals(emptyList<Int>(), XskbParser.parsePeriods(""))
+    }
+
+    @Test
+    fun handlesPeriodColumnWrittenAsRanges() {
+        // 重现「相同课表导入后占两节的课只占一节」的文件格式：节次列写成 1-2 / 3-4 / 5-6 / 7-8
+        val military = "军事理论\n\n陆诗雨【3周】\n7-北201"
+        val rows = listOf(
+            listOf("2026-2027学年第1学期 课表"),
+            listOf("年级：2026  院系：经济与管理学院  专业：大数据管理与应用  姓名：李杰珉"),
+            listOf("节次", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"),
+            listOf("1-2", "大学生职业生涯规划与就业指导（上）\n\n毛一【5-12周】\n7-北303", "", "", "", "", "", ""),
+            listOf("3-4", "", "高等数学2（上）\n\n于卫东【5-18周】\n7-南203", "", "", "", "", ""),
+            listOf("5-6", military, "", "", "", "", "", ""),
+            listOf("7-8", military, "", "", "", "", "", ""),
+        )
+
+        val result = XskbParser.parse(ByteArrayInputStream(XlsxFixture.build(rows)), "range.xlsx")
+
+        assertEquals(3, result.courses.size)
+        val career = result.courses.single { it.name.startsWith("大学生职业") }
+        assertEquals(listOf(1, 2), career.periods)
+        val math = result.courses.single { it.name.startsWith("高等数学") }
+        assertEquals(listOf(3, 4), math.periods)
+        val militaryCourse = result.courses.single { it.name == "军事理论" }
+        assertEquals(listOf(5, 6, 7, 8), militaryCourse.periods)
+        assertEquals(listOf(1, 2, 3, 4, 5, 6, 7, 8), result.usedPeriods)
+    }
+
+    @Test
+    fun expandsMergedCellsSoTwoRowCoursesKeepBothPeriods() {
+        // 另一种导出：两节连上的两行在 xlsx 里被合并成一个单元格，值只存在左上角
+        val career = "大学生职业生涯规划与就业指导（上）\n\n毛一【5-12周】\n7-北303"
+        val rows = listOf(
+            listOf("2026-2027学年第1学期 课表"),
+            listOf("年级：2026  院系：经济与管理学院  专业：大数据管理与应用  姓名：李杰珉"),
+            listOf("节次", "星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"),
+            listOf("1.0", career, "", "", "", "", "", ""),
+            listOf("2.0", "", "", "", "", "", "", ""),
+        )
+
+        val result = XskbParser.parse(
+            ByteArrayInputStream(XlsxFixture.build(rows, merges = listOf("B4:B5"))),
+            "merged.xlsx",
+        )
+
+        val course = result.courses.single()
+        assertEquals(listOf(1, 2), course.periods)
+    }
+
+    @Test
     fun parsesCellWithoutWeeksAsEveryWeek() {
         val blocks = XskbParser.parseCell("自习\n\n7-北101")
         assertEquals(1, blocks.size)

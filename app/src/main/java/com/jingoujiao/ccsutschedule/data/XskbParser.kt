@@ -67,9 +67,9 @@ object XskbParser {
         for (rowIndex in dataStart until grid.size) {
             val row = grid[rowIndex]
             val periodCell = row.getOrNull(periodColumn).orEmpty()
-            val period = parsePeriod(periodCell)
+            val rowPeriods = parsePeriods(periodCell)
             val hasAnyContent = row.any { it.isNotBlank() }
-            if (period == null) {
+            if (rowPeriods.isEmpty()) {
                 if (hasAnyContent && rowIndex > dataStart && looksLikeCourseRow(row, weekdayColumns)) {
                     warnings.add("第 ${rowIndex + 1} 行的节次“$periodCell”无法识别，已跳过该行。")
                 }
@@ -89,7 +89,7 @@ object XskbParser {
                             teacher = block.teacher,
                             location = block.location,
                             weekday = weekday,
-                            periods = listOf(period),
+                            periods = rowPeriods,
                             weeks = block.weeks,
                         )
                     )
@@ -159,12 +159,40 @@ object XskbParser {
     private fun looksLikeCourseRow(row: List<String>, weekdayColumns: Map<Int, Int>): Boolean =
         weekdayColumns.values.any { row.getOrNull(it).orEmpty().isNotBlank() }
 
-    /** “1”“1.0”“第1节”“1-2节” → 1..20；解析不到返回 null。 */
-    fun parsePeriod(text: String): Int? {
-        if (text.isBlank()) return null
-        val digits = Regex("""\d{1,2}""").find(text)?.value?.toIntOrNull() ?: return null
-        return if (digits in 1..20) digits else null
+    /**
+     * 节次单元格 → 节次列表。
+     *
+     * 教务系统的导出有两种常见写法：
+     *  - 一行一节：`1`、`2`、`10`（本校当前文件）
+     *  - 一行两节：`1-2`、`3-4`、`第5-6节`、`1、2`
+     * 后者如果只取第一个数字，就会出现「占两节的课只占一节」。
+     * 另外 `1.0` 这种带小数的写法只应取到 1，不能把小数位当成第二个节次。
+     */
+    fun parsePeriods(text: String): List<Int> {
+        if (text.isBlank()) return emptyList()
+        val normalized = text
+            .replace('－', '-').replace('—', '-').replace('–', '-')
+            .replace('～', '-').replace('~', '-').replace('至', '-')
+            .replace('．', '.').replace('。', '.')
+        // 带小数点的数字（1.0）先整体吃掉，避免把小数位当成节次
+        val tokens = Regex("""\d{1,2}(?:\.\d+)?""").findAll(normalized).map { it.value }.toList()
+        if (tokens.isEmpty()) return emptyList()
+        val numbers = tokens.mapNotNull { token -> token.substringBefore('.').toIntOrNull() }
+            .filter { it in 1..20 }
+        if (numbers.isEmpty()) return emptyList()
+        val first = numbers.first()
+        if (numbers.size >= 2) {
+            val second = numbers[1]
+            // `1-2` / `1、2` 这类区间写法：第二个数字是更大的节次
+            if (second > first && second - first <= 4) {
+                return (first..second).toList()
+            }
+        }
+        return listOf(first)
     }
+
+    /** 兼容旧调用：只取第一个节次。 */
+    fun parsePeriod(text: String): Int? = parsePeriods(text).firstOrNull()
 
     /** 单元格文本 → 课程块列表。 */
     fun parseCell(text: String): List<Block> {

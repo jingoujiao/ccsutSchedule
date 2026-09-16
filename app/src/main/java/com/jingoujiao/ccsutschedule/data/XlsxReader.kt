@@ -94,7 +94,7 @@ object XlsxReader {
     private fun parseSheet(bytes: ByteArray, shared: List<String>): List<List<String>> {
         val document = parseXml(bytes)
         val rowNodes = document.getElementsByTagName("row")
-        val rows = ArrayList<List<String>>(rowNodes.length)
+        val rows = ArrayList<MutableList<String>>(rowNodes.length)
         for (i in 0 until rowNodes.length) {
             val rowElement = rowNodes.item(i) as? Element ?: continue
             val cells = rowElement.getElementsByTagName("c")
@@ -131,7 +131,49 @@ object XlsxReader {
             for (index in 0..maxIndex) row.add(byIndex[index] ?: "")
             rows.add(row)
         }
+        applyMergedCells(document, rows)
         return rows
+    }
+
+    /**
+     * 把合并单元格的值填满整个合并区域。
+     *
+     * 教务系统另一种导出会把「两节连上」的两行合并成一个单元格（值只存在左上角），
+     * 不展开的话解析出来就只剩第一行那一节 —— 表现为「占两节的课只占一节」。
+     */
+    private fun applyMergedCells(document: Document, rows: MutableList<MutableList<String>>) {
+        val merges = document.getElementsByTagName("mergeCell")
+        for (i in 0 until merges.length) {
+            val element = merges.item(i) as? Element ?: continue
+            val ref = element.getAttribute("ref")
+            val bounds = ref.split(":")
+            if (bounds.size != 2) continue
+            val start = parseCellRef(bounds[0]) ?: continue
+            val end = parseCellRef(bounds[1]) ?: continue
+            val (startRow, startColumn) = start
+            val (endRow, endColumn) = end
+            val value = rows.getOrNull(startRow)?.getOrNull(startColumn).orEmpty()
+            if (value.isEmpty()) continue
+            for (rowIndex in startRow..endRow) {
+                while (rows.size <= rowIndex) rows.add(ArrayList())
+                val row = rows[rowIndex]
+                for (columnIndex in startColumn..endColumn) {
+                    while (row.size <= columnIndex) row.add("")
+                    if (row[columnIndex].isEmpty()) row[columnIndex] = value
+                }
+            }
+        }
+    }
+
+    /** “B5” → (行 4, 列 1)，都是 0 基。 */
+    private fun parseCellRef(ref: String): Pair<Int, Int>? {
+        val letters = ref.takeWhile { it.isLetter() }
+        val digits = ref.dropWhile { it.isLetter() }
+        if (letters.isEmpty() || digits.isEmpty()) return null
+        val row = digits.toIntOrNull()?.minus(1) ?: return null
+        val column = columnIndex(letters)
+        if (row < 0 || column < 0) return null
+        return row to column
     }
 
     private fun firstChildText(parent: Element, tag: String): String? {
