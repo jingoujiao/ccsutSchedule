@@ -3,6 +3,7 @@ package com.jingoujiao.ccsutschedule.ui
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -40,6 +43,7 @@ import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.Course
 import com.jingoujiao.ccsutschedule.data.PeriodTime
+import com.jingoujiao.ccsutschedule.data.SECTION_BREAKS
 import com.jingoujiao.ccsutschedule.data.WeekUtils
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
 import com.jingoujiao.ccsutschedule.ui.theme.courseColor
@@ -130,10 +134,28 @@ fun WeekScreen(
                 highlightToday = isCurrentWeek,
             )
             // 节次行按可视高度均分，正好铺到底部；被悬浮导航挡住时向上滑一点即可
+            // 网格区域内左右滑动可直接切换上下周
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
+                    .pointerInput(week, settings.totalWeeks) {
+                        val threshold = 56.dp.toPx()
+                        var dragged = 0f
+                        detectHorizontalDragGestures(
+                            onDragStart = { dragged = 0f },
+                            onDragCancel = { dragged = 0f },
+                            onDragEnd = {
+                                if (dragged <= -threshold && week < settings.totalWeeks) {
+                                    onSelectWeek(week + 1)
+                                } else if (dragged >= threshold && week > 1) {
+                                    onSelectWeek(week - 1)
+                                }
+                                dragged = 0f
+                            },
+                            onHorizontalDrag = { _, delta -> dragged += delta },
+                        )
+                    }
             ) {
                 val cellHeight = (maxHeight / maxPeriod).coerceIn(44.dp, 120.dp)
                 GridBody(
@@ -489,7 +511,8 @@ private fun GridBody(
             .fillMaxWidth()
             .verticalScroll(rememberScrollState())
     ) {
-        Row(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth()) {
+            Row(Modifier.fillMaxWidth()) {
             // 节次列
             Column(Modifier.width(PERIOD_COLUMN_WIDTH)) {
                 for (period in 1..maxPeriod) {
@@ -545,9 +568,46 @@ private fun GridBody(
                 }
             }
             Box(Modifier.width(2.dp).height(cellHeight * maxPeriod))
+            }
+            // 上午 / 下午 / 晚上 的分界线（只画不占高度，保证各列节次仍对齐）
+            SECTION_BREAKS.forEach { (afterPeriod, label) ->
+                if (afterPeriod < maxPeriod) {
+                    SectionDivider(offsetY = cellHeight * afterPeriod, label = label)
+                }
+            }
         }
         // 悬浮导航会压住最后几行，留一点可滚动空间让用户把课拉出来
         Spacer(Modifier.height(84.dp))
+    }
+}
+
+/** 跨整行的一条分界线 + 一个小标签，用来区分上午 / 下午 / 晚上。 */
+@Composable
+private fun SectionDivider(offsetY: androidx.compose.ui.unit.Dp, label: String) {
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .offset(y = offsetY)
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .height(1.dp)
+                .background(MaterialTheme.colorScheme.outlineVariant)
+        )
+        Box(
+            Modifier
+                .padding(start = 6.dp, top = 3.dp)
+                .clip(RoundedCornerShape(6.dp))
+                .background(MaterialTheme.colorScheme.surfaceContainerHighest)
+                .padding(horizontal = 6.dp, vertical = 1.dp)
+        ) {
+            Text(
+                text = label,
+                fontSize = 9.sp,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
 

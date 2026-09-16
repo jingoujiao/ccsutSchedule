@@ -2,6 +2,11 @@ package com.jingoujiao.ccsutschedule
 
 import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.Course
+import com.jingoujiao.ccsutschedule.data.JsonStore
+import com.jingoujiao.ccsutschedule.data.LEGACY_DEFAULT_PERIOD_TIMES
+import com.jingoujiao.ccsutschedule.data.PeriodTime
+import com.jingoujiao.ccsutschedule.data.defaultPeriodTimes
+import java.nio.file.Files
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -55,5 +60,42 @@ class StorageCompatTest {
         )
         assertEquals("2026-10-05", state.settings.firstWeekMonday)
         assertEquals(emptyList<Course>(), state.schedule.courses)
+    }
+
+    @Test
+    fun schoolDefaultTimetableMatchesTheGivenTimes() {
+        val periods = defaultPeriodTimes()
+        assertEquals(listOf("08:20", "09:15", "10:20", "11:15"), periods.take(4).map { it.start })
+        assertEquals(listOf("09:05", "10:00", "11:05", "12:00"), periods.take(4).map { it.end })
+        assertEquals(10, periods.size)
+    }
+
+    @Test
+    fun upgradesUntouchedLegacyTimetableToSchoolDefaults() {
+        val store = storeWith(LEGACY_DEFAULT_PERIOD_TIMES)
+
+        val loaded = store.load()
+
+        assertEquals(defaultPeriodTimes(), loaded.settings.periods)
+        assertEquals("08:20", loaded.settings.periods.first().start)
+        // 升级结果要落盘，第二次读取直接就是新时间
+        assertEquals(defaultPeriodTimes(), store.load().settings.periods)
+    }
+
+    @Test
+    fun keepsUserCustomisedTimetable() {
+        val customised = LEGACY_DEFAULT_PERIOD_TIMES.mapIndexed { index, period ->
+            if (index == 0) period.copy(start = "08:35") else period
+        }
+        val store = storeWith(customised)
+
+        assertEquals(customised, store.load().settings.periods)
+    }
+
+    private fun storeWith(periods: List<PeriodTime>): JsonStore {
+        val dir = Files.createTempDirectory("ccsut-test").toFile()
+        val store = JsonStore(dir)
+        store.save(AppStateData().let { it.copy(settings = it.settings.copy(periods = periods)) })
+        return store
     }
 }

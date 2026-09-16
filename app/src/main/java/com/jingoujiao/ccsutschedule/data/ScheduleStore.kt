@@ -21,12 +21,24 @@ class JsonStore(private val dir: File) {
     fun load(): AppStateData {
         if (!file.exists()) return AppStateData()
         return try {
-            json.decodeFromString(AppStateData.serializer(), file.readText(Charsets.UTF_8))
+            val decoded = json.decodeFromString(AppStateData.serializer(), file.readText(Charsets.UTF_8))
+            val migrated = migrateLegacyDefaults(decoded)
+            if (migrated != decoded) save(migrated) // 让升级结果落盘，避免每次启动都重算
+            migrated
         } catch (_: Exception) {
             // 数据损坏时保留现场，回退到空白数据，不让 App 起不来
             runCatching { file.renameTo(File(dir, "ccsut-schedule.corrupt.json")) }
             AppStateData()
         }
+    }
+
+    /**
+     * 默认作息改成本校时间后，老数据的 `periods` 还是旧默认值。
+     * 只在「一个字都没改过」时才替换，用户自己调过的时间绝不动。
+     */
+    private fun migrateLegacyDefaults(data: AppStateData): AppStateData {
+        if (data.settings.periods != LEGACY_DEFAULT_PERIOD_TIMES) return data
+        return data.copy(settings = data.settings.copy(periods = defaultPeriodTimes()))
     }
 
     fun save(data: AppStateData) {

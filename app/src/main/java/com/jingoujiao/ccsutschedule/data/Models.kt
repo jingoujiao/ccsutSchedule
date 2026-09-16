@@ -119,8 +119,22 @@ object ThemeMode {
     }
 }
 
-/** 默认作息：8 节课 + 2 节晚课，用户可在设置里逐节修改。 */
+/** 默认作息：上午 4 节按本校时间，其余为通用时间，用户可在设置里逐节修改。 */
 fun defaultPeriodTimes(): List<PeriodTime> = listOf(
+    PeriodTime(1, "08:20", "09:05"),
+    PeriodTime(2, "09:15", "10:00"),
+    PeriodTime(3, "10:20", "11:05"),
+    PeriodTime(4, "11:15", "12:00"),
+    PeriodTime(5, "14:00", "14:45"),
+    PeriodTime(6, "14:55", "15:40"),
+    PeriodTime(7, "16:00", "16:45"),
+    PeriodTime(8, "16:55", "17:40"),
+    PeriodTime(9, "19:00", "19:45"),
+    PeriodTime(10, "19:55", "20:40"),
+)
+
+/** 旧版默认作息。升级时若用户没改过时间，就自动换成新默认（改了的不动）。 */
+val LEGACY_DEFAULT_PERIOD_TIMES: List<PeriodTime> = listOf(
     PeriodTime(1, "08:00", "08:45"),
     PeriodTime(2, "08:55", "09:40"),
     PeriodTime(3, "10:00", "10:45"),
@@ -131,6 +145,15 @@ fun defaultPeriodTimes(): List<PeriodTime> = listOf(
     PeriodTime(8, "16:55", "17:40"),
     PeriodTime(9, "19:00", "19:45"),
     PeriodTime(10, "19:55", "20:40"),
+)
+
+/**
+ * 作息分段：在第 N 节之后画一条分界线，并标出接下来这一段的名称。
+ * 用来把「上午 / 下午 / 晚上」在课表上区分开。
+ */
+val SECTION_BREAKS: List<Pair<Int, String>> = listOf(
+    4 to "下午",
+    8 to "晚上",
 )
 
 /** 配色方案预设：只存主色相，具体色板由色相推导。 */
