@@ -38,6 +38,7 @@ import com.jingoujiao.ccsutschedule.data.BackgroundPresets
 import com.jingoujiao.ccsutschedule.data.PalettePresets
 import com.jingoujiao.ccsutschedule.data.ThemeMode
 import com.jingoujiao.ccsutschedule.ui.CardSurface
+import com.jingoujiao.ccsutschedule.ui.CcsutSlider
 import com.jingoujiao.ccsutschedule.ui.Glyph
 import com.jingoujiao.ccsutschedule.ui.GlyphIcon
 import com.jingoujiao.ccsutschedule.ui.PillChip
@@ -187,11 +188,40 @@ fun AppearanceSettingsPage(
                     fontSize = 12.5.sp,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
-                Slider(
+                CcsutSlider(
                     value = settings.backgroundAlpha,
                     onValueChange = { value -> onUpdateSettings { it.copy(backgroundAlpha = value) } },
                     valueRange = 0.05f..0.75f,
                 )
+            }
+        }
+
+        CardSurface {
+            SettingRow(
+                title = "玻璃模糊度",
+                subtitle = "${(settings.glassFrost * 100).toInt()}%　" +
+                    "数字越大，课程卡片/底部导航/卡片与弹层越白越厚（越像磨砂玻璃）",
+                glyph = Glyph.Palette,
+            )
+            Spacer(Modifier.height(6.dp))
+            CcsutSlider(
+                value = settings.glassFrost,
+                onValueChange = { value -> onUpdateSettings { it.copy(glassFrost = value) } },
+                valueRange = 0f..1f,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "很透" to 0.35f,
+                    "适中" to 0.65f,
+                    "磨砂" to 0.9f,
+                    "最厚" to 1f,
+                ).forEach { (label, value) ->
+                    PillChip(
+                        text = label,
+                        selected = kotlin.math.abs(settings.glassFrost - value) < 0.02f,
+                        onClick = { onUpdateSettings { it.copy(glassFrost = value) } },
+                    )
+                }
             }
         }
 

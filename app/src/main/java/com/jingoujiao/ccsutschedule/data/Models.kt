@@ -97,6 +97,8 @@ data class AppSettings(
     val backgroundPreset: String = BackgroundPresets.DEFAULT_ID,
     /** 背景图不透明度 0..1。 */
     val backgroundAlpha: Float = 0.28f,
+    /** 玻璃模糊度（磨砂强度）0..1，见 [DEFAULT_GLASS_FROST]。 */
+    val glassFrost: Float = DEFAULT_GLASS_FROST,
     /** 是否在网格里用淡色显示非本周课程。 */
     val showOtherWeeks: Boolean = false,
     /** 启动时自动检查更新。 */
@@ -212,3 +214,10 @@ object PalettePresets {
 
 /** 课程卡片配色数量，配色由 [com.jingoujiao.ccsutschedule.ui.theme.courseColor] 按 key 推导。 */
 const val COURSE_COLOR_COUNT = 12
+
+/**
+ * 玻璃模糊度（磨砂强度）默认值：偏「厚」一点，接近参考视频里的磨砂白。
+ *
+ * 0 = 很透、课程色明显；1 = 很白很厚、课程色被冲淡。
+ */
+const val DEFAULT_GLASS_FROST: Float = 0.9f

@@ -1007,7 +1007,6 @@ private fun CourseCell(
         shape = RoundedCornerShape(11.dp),
         tint = accent,
         tintAlpha = if (dark) 0.34f else 0.30f,
-        borderWidth = 0.8.dp,
     ) {
         CourseCellContent(course = course, modifier = Modifier.fillMaxSize())
     }
@@ -1056,7 +1055,6 @@ private fun OverflowCell(count: Int, modifier: Modifier = Modifier) {
         shape = RoundedCornerShape(11.dp),
         tint = MaterialTheme.colorScheme.onSurface,
         tintAlpha = 0.16f,
-        borderWidth = 0.8.dp,
     ) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             Text(

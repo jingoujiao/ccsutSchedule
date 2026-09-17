@@ -151,7 +151,10 @@ fun CcsutTheme(
         }
     }
 
-    CompositionLocalProvider(LocalDarkTheme provides dark) {
+    CompositionLocalProvider(
+        LocalDarkTheme provides dark,
+        LocalGlassFrost provides settings.glassFrost,
+    ) {
         MaterialTheme(colorScheme = scheme, content = content)
     }
 }

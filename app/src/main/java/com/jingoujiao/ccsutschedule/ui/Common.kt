@@ -31,6 +31,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
@@ -286,9 +288,8 @@ fun CircleIconButton(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .semantics { this.contentDescription = contentDescription },
         shape = CircleShape,
-        tint = tintColor,
+        tint = tintColor ?: borderTint,
         tintAlpha = 0.5f,
-        borderWidth = if (borderTint == null) 1.dp else 1.dp,
     ) {
         GlyphIcon(glyph, tint, size = size * 0.5f, modifier = Modifier.align(Alignment.Center))
     }
@@ -589,7 +590,6 @@ fun CcsutSheet(
                     modifier = Modifier.fillMaxWidth(),
                     shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                     elevation = 18.dp,
-                    borderWidth = 1.dp,
                 ) {
                     Column(
                         Modifier
@@ -701,6 +701,29 @@ fun LabeledTextField(
             unfocusedContainerColor = Color.Transparent,
             disabledContainerColor = Color.Transparent,
             unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant,
+        ),
+    )
+}
+
+/** 统一风格的滑杆：细轨道 + 实心圆点滑块，压在壁纸上也看得清。 */
+@Composable
+fun CcsutSlider(
+    value: Float,
+    onValueChange: (Float) -> Unit,
+    valueRange: ClosedFloatingPointRange<Float>,
+    modifier: Modifier = Modifier,
+) {
+    Slider(
+        value = value,
+        onValueChange = onValueChange,
+        valueRange = valueRange,
+        modifier = modifier,
+        colors = SliderDefaults.colors(
+            thumbColor = MaterialTheme.colorScheme.primary,
+            activeTrackColor = MaterialTheme.colorScheme.primary,
+            inactiveTrackColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            activeTickColor = Color.Transparent,
+            inactiveTickColor = Color.Transparent,
         ),
     )
 }

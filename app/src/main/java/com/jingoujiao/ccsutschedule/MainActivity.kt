@@ -10,6 +10,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.background
@@ -22,6 +25,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
@@ -34,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -41,8 +46,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.boundsInParent
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.Course
@@ -68,8 +79,12 @@ import com.jingoujiao.ccsutschedule.ui.settings.SettingsPage
 import com.jingoujiao.ccsutschedule.ui.settings.SettingsScreen
 import com.jingoujiao.ccsutschedule.ui.theme.CcsutTheme
 import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
+import com.jingoujiao.ccsutschedule.ui.theme.glassColors
+import com.jingoujiao.ccsutschedule.ui.theme.liquidGlass
 import java.io.File
 import java.time.LocalDate
+import kotlin.math.abs
+import kotlin.math.roundToInt
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -523,51 +538,103 @@ private fun AppRoot(repo: ScheduleRepository) {
 @Composable
 private fun LocalContextCompat(): android.content.Context = androidx.compose.ui.platform.LocalContext.current
 
-/** 底部悬浮胶囊导航，对应示例图里的「课程 / 设置」。 */
+/**
+ * 底部悬浮胶囊导航（课程 / 设置）。
+ *
+ * 选中块是一颗「水滴」：切换时从旧位置**滑**到新位置（弹簧），滑动过程中横向拉长、
+ * 纵向压扁，到位后回弹——所以看起来像一滴水被拉过去再收回来。
+ */
 @Composable
 private fun PillNavigation(
     selected: Int,
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    val items = listOf("课程" to Glyph.Calendar, "设置" to Glyph.Settings)
+    // 每一项的真实位置/大小（布局后测量），水滴就按它滑动
+    val bounds = remember { mutableStateMapOf<Int, Rect>() }
+    val target = bounds[selected]
+    val density = LocalDensity.current
+    val offsetX = remember { Animatable(0f) }
+    val blobWidth = remember { Animatable(0f) }
+    val blobHeight = remember { Animatable(0f) }
+
+    LaunchedEffect(target) {
+        val rect = target ?: return@LaunchedEffect
+        if (blobWidth.value == 0f) {
+            // 首次测量：直接就位，不要从左边滑出来
+            offsetX.snapTo(rect.left)
+            blobWidth.snapTo(rect.width)
+            blobHeight.snapTo(rect.height)
+            return@LaunchedEffect
+        }
+        blobHeight.animateTo(rect.height, spring(stiffness = Spring.StiffnessMedium))
+        launch { blobWidth.animateTo(rect.width, spring(stiffness = Spring.StiffnessMedium)) }
+        offsetX.animateTo(
+            rect.left,
+            spring(dampingRatio = 0.58f, stiffness = Spring.StiffnessMediumLow),
+        )
+    }
+
+    // 离目标越远拉得越长（水滴被拉扯），到位后自然回弹
+    val stretch = if (target != null && target.width > 0f) {
+        ((abs(target.left - offsetX.value)) / target.width).coerceIn(0f, 1f) * 0.32f
+    } else {
+        0f
+    }
+
     GlassSurface(
         modifier = modifier,
         shape = RoundedCornerShape(30.dp),
         elevation = 12.dp,
     ) {
-        Row(
-            Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
-            horizontalArrangement = Arrangement.spacedBy(6.dp),
-        ) {
-            PillNavItem("课程", Glyph.Calendar, selected == 0) { onSelect(0) }
-            PillNavItem("设置", Glyph.Settings, selected == 1) { onSelect(1) }
+        Box(Modifier.padding(horizontal = 8.dp, vertical = 6.dp)) {
+            val colors = glassColors()
+            Box(
+                modifier = Modifier
+                    .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                    .size(
+                        width = with(density) { blobWidth.value.toDp() },
+                        height = with(density) { blobHeight.value.toDp() },
+                    )
+                    .graphicsLayer {
+                        scaleX = 1f + stretch
+                        scaleY = 1f - stretch * 0.45f
+                    }
+                    .liquidGlass(
+                        shape = RoundedCornerShape(22.dp),
+                        colors = colors,
+                        tint = MaterialTheme.colorScheme.primary,
+                        tintAlpha = 0.92f,
+                    )
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                items.forEachIndexed { index, (label, glyph) ->
+                    Box(
+                        Modifier.onGloballyPositioned { coords ->
+                            bounds[index] = coords.boundsInParent()
+                        }
+                    ) {
+                        PillNavItem(label, glyph, selected == index) { onSelect(index) }
+                    }
+                }
+            }
         }
     }
 }
 
 @Composable
 private fun PillNavItem(label: String, glyph: Glyph, selected: Boolean, onClick: () -> Unit) {
-    val color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+    val color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant
     Column(
         modifier = Modifier
-            .clip(RoundedCornerShape(20.dp))
+            .clip(RoundedCornerShape(22.dp))
             .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 6.dp),
+            .padding(horizontal = 20.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        GlassSurface(
-            modifier = Modifier.size(30.dp),
-            shape = RoundedCornerShape(10.dp),
-            tint = MaterialTheme.colorScheme.primary,
-            tintAlpha = if (selected) 0.9f else 0f,
-            borderWidth = if (selected) 1.dp else 0.dp,
-        ) {
-            GlyphIcon(
-                glyph = glyph,
-                tint = if (selected) MaterialTheme.colorScheme.onPrimary else color,
-                size = 18.dp,
-                modifier = Modifier.align(Alignment.Center),
-            )
+        Box(Modifier.size(30.dp), contentAlignment = Alignment.Center) {
+            GlyphIcon(glyph = glyph, tint = color, size = 18.dp)
         }
         Spacer(Modifier.width(2.dp))
         Text(
