@@ -29,7 +29,6 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +47,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.Course
 import com.jingoujiao.ccsutschedule.data.CourseFactory
+import com.jingoujiao.ccsutschedule.data.OverlapRules
 import com.jingoujiao.ccsutschedule.data.ScheduleData
 import com.jingoujiao.ccsutschedule.data.ScheduleRepository
 import com.jingoujiao.ccsutschedule.data.UpdateChecker
@@ -67,6 +67,7 @@ import com.jingoujiao.ccsutschedule.ui.WeekScreen
 import com.jingoujiao.ccsutschedule.ui.settings.SettingsPage
 import com.jingoujiao.ccsutschedule.ui.settings.SettingsScreen
 import com.jingoujiao.ccsutschedule.ui.theme.CcsutTheme
+import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
 import java.io.File
 import java.time.LocalDate
 import kotlinx.coroutines.Dispatchers
@@ -243,6 +244,20 @@ private fun AppRoot(repo: ScheduleRepository) {
                                     pendingSlot = weekday to period
                                     overlay = Overlay.Editor(null)
                                 },
+                                onMoveCourse = { course, weekday, startPeriod ->
+                                    val moved = course.copy(
+                                        weekday = weekday,
+                                        periods = (startPeriod until startPeriod + course.span).toList(),
+                                    )
+                                    val reason = OverlapRules.rejectReason(moved, state.schedule.courses)
+                                    if (reason != null) {
+                                        toast(reason)
+                                    } else {
+                                        repo.saveCourse(moved)
+                                        toast("已移到${WeekUtils.weekdayLongLabel(weekday)}第 $startPeriod 节")
+                                    }
+                                },
+                                onNotify = { text -> toast(text) },
                                 onOpenToday = { overlay = Overlay.Today },
                                 onOpenImport = { overlay = Overlay.Import },
                                 onAddManual = {
@@ -304,7 +319,8 @@ private fun AppRoot(repo: ScheduleRepository) {
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .background(MaterialTheme.colorScheme.background)
+                            // 半透明而不是实心：全屏页下面还能看到壁纸，和玻璃卡片是一套
+                            .background(MaterialTheme.colorScheme.background.copy(alpha = 0.90f))
                             .windowInsetsPadding(WindowInsets.safeDrawing)
                     ) {
                         when (current) {
@@ -465,18 +481,18 @@ private fun AppRoot(repo: ScheduleRepository) {
                     exit = fadeOut(),
                     modifier = Modifier.align(Alignment.BottomCenter),
                 ) {
-                    Box(
-                        Modifier
+                    GlassSurface(
+                        modifier = Modifier
                             .padding(bottom = 100.dp)
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .clip(RoundedCornerShape(14.dp))
-                            .background(MaterialTheme.colorScheme.inverseSurface)
-                            .padding(horizontal = 18.dp, vertical = 11.dp)
+                            .windowInsetsPadding(WindowInsets.navigationBars),
+                        shape = RoundedCornerShape(16.dp),
+                        elevation = 10.dp,
                     ) {
                         Text(
                             message.orEmpty(),
-                            color = MaterialTheme.colorScheme.inverseOnSurface,
+                            color = MaterialTheme.colorScheme.onSurface,
                             fontSize = 13.5.sp,
+                            modifier = Modifier.padding(horizontal = 18.dp, vertical = 11.dp),
                         )
                     }
                 }
@@ -514,15 +530,10 @@ private fun PillNavigation(
     onSelect: (Int) -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Surface(
+    GlassSurface(
         modifier = modifier,
         shape = RoundedCornerShape(30.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shadowElevation = 6.dp,
-        border = androidx.compose.foundation.BorderStroke(
-            1.dp,
-            MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.6f),
-        ),
+        elevation = 12.dp,
     ) {
         Row(
             Modifier.padding(horizontal = 10.dp, vertical = 8.dp),
@@ -544,17 +555,18 @@ private fun PillNavItem(label: String, glyph: Glyph, selected: Boolean, onClick:
             .padding(horizontal = 18.dp, vertical = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        Box(
-            modifier = Modifier
-                .size(30.dp)
-                .clip(RoundedCornerShape(10.dp))
-                .background(if (selected) MaterialTheme.colorScheme.primary else Color.Transparent),
-            contentAlignment = Alignment.Center,
+        GlassSurface(
+            modifier = Modifier.size(30.dp),
+            shape = RoundedCornerShape(10.dp),
+            tint = MaterialTheme.colorScheme.primary,
+            tintAlpha = if (selected) 0.9f else 0f,
+            borderWidth = if (selected) 1.dp else 0.dp,
         ) {
             GlyphIcon(
                 glyph = glyph,
                 tint = if (selected) MaterialTheme.colorScheme.onPrimary else color,
                 size = 18.dp,
+                modifier = Modifier.align(Alignment.Center),
             )
         }
         Spacer(Modifier.width(2.dp))
@@ -568,12 +580,7 @@ private fun PillNavItem(label: String, glyph: Glyph, selected: Boolean, onClick:
 }
 
 private fun conflictTextFor(course: Course, all: List<Course>): String? {
-    val conflicts = all.filter { other ->
-        other.id != course.id &&
-            other.weekday == course.weekday &&
-            other.periods.any { it in course.periods } &&
-            (other.weeks.isEmpty() || course.weeks.isEmpty() || other.weeks.any { it in course.weeks })
-    }
+    val conflicts = OverlapRules.conflictsWith(course, all)
     if (conflicts.isEmpty()) return null
     return "与「${conflicts.joinToString("、") { it.name }}」时间重叠"
 }

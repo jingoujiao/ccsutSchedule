@@ -1,9 +1,12 @@
 package com.jingoujiao.ccsutschedule.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -18,44 +21,73 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.Course
+import com.jingoujiao.ccsutschedule.data.MAX_OVERLAP
+import com.jingoujiao.ccsutschedule.data.OverlapRules
 import com.jingoujiao.ccsutschedule.data.PeriodTime
 import com.jingoujiao.ccsutschedule.data.SECTION_BREAKS
 import com.jingoujiao.ccsutschedule.data.WeekUtils
+import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
 import com.jingoujiao.ccsutschedule.ui.theme.courseColor
+import com.jingoujiao.ccsutschedule.ui.theme.glassColors
+import com.jingoujiao.ccsutschedule.ui.theme.liquidGlass
 import java.time.LocalDate
 import java.time.LocalTime
+import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 
 private val PERIOD_COLUMN_WIDTH = 44.dp
 
+/** 表头（星期 + 日期）的高度；拖动时要用它把手指坐标换算回节次。 */
+private val HEADER_HEIGHT = 52.dp
+
+/** 拖动时手指离上下边缘这么近就开始自动滚动课表。 */
+private val DRAG_EDGE_SCROLL_ZONE = 76.dp
+
 /**
  * 周课表：一周七天一屏显示（不横向滚动），纵向可滚动。
- * 布局与交互对齐 example 里的示例图：
- * 「第 N 周 + 大号日期」→「< 第 N 周 >」→「节次 | 周一~周日（含日期）」→ 课程网格。
+ *
+ * 交互（对齐 example 里的参考视频）：
+ * - 左右滑动切换上下周：走 [HorizontalPager]，跟手、松手自动吸附，顶部标题同时滑动；
+ * - 长按课程卡片可以拖到别的星期 / 节次，拖动时卡片浮起来跟着手指，落点有虚框提示；
+ * - 同一时段最多 [MAX_OVERLAP] 门课，超了拖不过去、也存不下。
  */
 @Composable
 fun WeekScreen(
@@ -65,6 +97,8 @@ fun WeekScreen(
     onSelectWeek: (Int) -> Unit,
     onCourseClick: (Course) -> Unit,
     onAddCourse: (Int, Int) -> Unit,
+    onMoveCourse: (Course, Int, Int) -> Unit,
+    onNotify: (String) -> Unit,
     onOpenToday: () -> Unit,
     onOpenImport: () -> Unit,
     onAddManual: () -> Unit,
@@ -72,15 +106,12 @@ fun WeekScreen(
 ) {
     val settings = state.settings
     val courses = state.schedule.courses
-    val week = selectedWeek.coerceAtLeast(1)
+    val totalWeeks = settings.totalWeeks.coerceIn(1, 60)
+    val week = selectedWeek.coerceIn(1, totalWeeks)
     val firstMonday = WeekUtils.firstWeekMonday(settings.firstWeekMonday)
     val todayWeek = WeekUtils.weekOf(today, firstMonday)
-    val monday = WeekUtils.mondayOfWeek(week, firstMonday)
     val isCurrentWeek = todayWeek > 0 && week == todayWeek
 
-    val visibleCourses = remember(courses, week, settings.showOtherWeeks) {
-        if (settings.showOtherWeeks) courses else courses.filter { it.activeInWeek(week) }
-    }
     val maxPeriod = remember(settings.periods, courses) {
         val fromCourses = courses.maxOfOrNull { it.endPeriod } ?: 0
         maxOf(settings.periods.size, fromCourses).coerceIn(1, 14)
@@ -92,13 +123,40 @@ fun WeekScreen(
     }
 
     var menuVisible by remember { mutableStateOf(false) }
+    // 拖动状态放在 State 里，只有浮层会读它——避免每帧重算整张课表
+    val dragState = remember { mutableStateOf<CourseDrag?>(null) }
+    val landingState = remember { mutableStateOf<Landing?>(null) }
+
+    val pagerState = rememberPagerState(initialPage = week - 1, pageCount = { totalWeeks })
+    // 每个周页各自记住纵向滚动位置（拖动时要用当前页的偏移量换算节次）
+    val scrollStates = remember(totalWeeks) { mutableMapOf<Int, ScrollState>() }
+
+    // 外部改周（箭头 / 周次选择器 / 「本周」）→ 动画滚到那一页
+    LaunchedEffect(week) {
+        if (!pagerState.isScrollInProgress && pagerState.currentPage != week - 1) {
+            pagerState.animateScrollToPage(week - 1)
+        }
+    }
+    // 手势滑动落定 → 通知外部，让顶部标题、周次胶囊一起更新。
+    // 回调必须取最新引用，否则这个长期存活的协程会一直用第一次组合时的旧闭包，
+    // 导致「往回滑」时标题不跟着回去。
+    val selectWeek by rememberUpdatedState(onSelectWeek)
+    LaunchedEffect(pagerState) {
+        snapshotFlow { pagerState.settledPage }.collect { page -> selectWeek(page + 1) }
+    }
+    LaunchedEffect(landingState) {
+        if (landingState.value != null) {
+            delay(620)
+            landingState.value = null
+        }
+    }
 
     Column(Modifier.fillMaxSize()) {
         TopHeader(
             week = week,
             today = today,
             isCurrentWeek = isCurrentWeek,
-            weekMonday = monday,
+            weekMonday = WeekUtils.mondayOfWeek(week, firstMonday),
             onOpenToday = onOpenToday,
             onEdit = onAddManual,
             onMore = { menuVisible = true },
@@ -106,7 +164,7 @@ fun WeekScreen(
 
         WeekSwitcher(
             week = week,
-            totalWeeks = settings.totalWeeks,
+            totalWeeks = totalWeeks,
             currentWeek = todayWeek,
             firstMonday = firstMonday,
             onSelectWeek = onSelectWeek,
@@ -128,47 +186,167 @@ fun WeekScreen(
                 glyph = Glyph.Import,
             )
         } else {
-            GridHeaderRow(
-                monday = monday,
-                today = today,
-                highlightToday = isCurrentWeek,
-            )
-            // 节次行按可视高度均分，正好铺到底部；被悬浮导航挡住时向上滑一点即可
-            // 网格区域内左右滑动可直接切换上下周
             BoxWithConstraints(
                 Modifier
                     .weight(1f)
                     .fillMaxWidth()
-                    .pointerInput(week, settings.totalWeeks) {
-                        val threshold = 56.dp.toPx()
-                        var dragged = 0f
-                        detectHorizontalDragGestures(
-                            onDragStart = { dragged = 0f },
-                            onDragCancel = { dragged = 0f },
-                            onDragEnd = {
-                                if (dragged <= -threshold && week < settings.totalWeeks) {
-                                    onSelectWeek(week + 1)
-                                } else if (dragged >= threshold && week > 1) {
-                                    onSelectWeek(week - 1)
+            ) {
+                val density = LocalDensity.current
+                val haptics = LocalHapticFeedback.current
+                val periodColPx = with(density) { PERIOD_COLUMN_WIDTH.toPx() }
+                val headerPx = with(density) { HEADER_HEIGHT.toPx() }
+                val areaWidthPx = with(density) { maxWidth.toPx() }
+                val areaHeightPx = with(density) { maxHeight.toPx() }
+                // 节次行按可视高度均分，正好铺到底部
+                val cellHeight = ((maxHeight - HEADER_HEIGHT) / maxPeriod).coerceIn(44.dp, 120.dp)
+                val cellPx = with(density) { cellHeight.toPx() }
+                val colPx = ((areaWidthPx - periodColPx) / 7f).coerceAtLeast(1f)
+
+                fun weekdayAt(x: Float): Int = ((x - periodColPx) / colPx).toInt().coerceIn(0, 6) + 1
+
+                fun periodAt(y: Float, scroll: Int): Int =
+                    ((y - headerPx + scroll) / cellPx).toInt().coerceIn(0, maxPeriod - 1) + 1
+
+                fun pageCourses(pageWeek: Int): List<Course> =
+                    if (settings.showOtherWeeks) courses else courses.filter { it.activeInWeek(pageWeek) }
+
+                // 只在这两个值真的变化时才让课表重组（拖动中每帧变化的是 x/y，不在这里读）
+                val dragging by remember { derivedStateOf { dragState.value != null } }
+                val draggingId by remember { derivedStateOf { dragState.value?.course?.id } }
+
+                HorizontalPager(
+                    state = pagerState,
+                    modifier = Modifier.fillMaxSize(),
+                    beyondViewportPageCount = 1,
+                    userScrollEnabled = !dragging,
+                ) { page ->
+                    val pageWeek = page + 1
+                    val pageList = remember(courses, pageWeek, settings.showOtherWeeks) { pageCourses(pageWeek) }
+                    val dimmed = remember(courses, pageWeek, settings.showOtherWeeks) {
+                        if (settings.showOtherWeeks) {
+                            courses.filterNot { it.activeInWeek(pageWeek) }.map { it.id }.toSet()
+                        } else {
+                            emptySet()
+                        }
+                    }
+                    val scrollState = scrollStates.getOrPut(page) { ScrollState(0) }
+                    // 手势必须挂在「滚动内容」这一层：Compose 的 Main 阶段是内层先拿到事件，
+                    // 挂在外层的话第一次 MOVE 就被 verticalScroll 抢走，长按拖动会被取消。
+                    val dragGesture = Modifier.pointerInput(pageWeek, cellPx, colPx, maxPeriod, pageList) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { local ->
+                                val scroll = scrollState.value
+                                val weekday = weekdayAt(local.x)
+                                val period = (local.y / cellPx).toInt().coerceIn(0, maxPeriod - 1) + 1
+                                val hit = pageList
+                                    .filter { it.weekday == weekday && period in it.periods }
+                                    .minByOrNull { it.span }
+                                if (hit == null) {
+                                    dragState.value = null
+                                } else {
+                                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                    // 手势坐标是「滚动内容」坐标系，浮层画在外层，这里换算一次
+                                    val x = local.x
+                                    val y = local.y + headerPx - scroll
+                                    val cardLeft = periodColPx + (weekday - 1) * colPx
+                                    val cardTop = headerPx + (hit.startPeriod - 1) * cellPx - scroll
+                                    landingState.value = null
+                                    dragState.value = CourseDrag(
+                                        course = hit,
+                                        grabX = x - cardLeft,
+                                        grabY = y - cardTop,
+                                        x = x,
+                                        y = y,
+                                        targetWeekday = weekday,
+                                        targetPeriod = hit.startPeriod,
+                                        allowed = true,
+                                    )
                                 }
-                                dragged = 0f
                             },
-                            onHorizontalDrag = { _, delta -> dragged += delta },
+                            onDragEnd = {
+                                val current = dragState.value
+                                dragState.value = null
+                                if (current != null) {
+                                    val moved = current.targetWeekday != current.course.weekday ||
+                                        current.targetPeriod != current.course.startPeriod
+                                    when {
+                                        !moved -> Unit
+                                        !current.allowed ->
+                                            onNotify("同一时段最多 $MAX_OVERLAP 门课，这里放不下")
+                                        else -> {
+                                            onMoveCourse(
+                                                current.course,
+                                                current.targetWeekday,
+                                                current.targetPeriod,
+                                            )
+                                            landingState.value = Landing(
+                                                current.targetWeekday,
+                                                current.targetPeriod,
+                                                current.course.span,
+                                            )
+                                        }
+                                    }
+                                }
+                            },
+                            onDragCancel = { dragState.value = null },
+                            onDrag = { change, delta ->
+                                change.consume()
+                                val current = dragState.value ?: return@detectDragGesturesAfterLongPress
+                                val scroll = scrollState.value
+                                val x = current.x + delta.x
+                                val y = current.y + delta.y
+                                val maxStart = (maxPeriod - current.course.span + 1).coerceAtLeast(1)
+                                val targetWeekday = weekdayAt(x)
+                                val targetPeriod = periodAt(y, scroll).coerceIn(1, maxStart)
+                                val moved = current.course.copy(
+                                    weekday = targetWeekday,
+                                    periods = (targetPeriod until targetPeriod + current.course.span).toList(),
+                                )
+                                dragState.value = current.copy(
+                                    x = x,
+                                    y = y,
+                                    targetWeekday = targetWeekday,
+                                    targetPeriod = targetPeriod,
+                                    allowed = OverlapRules.rejectReason(moved, courses) == null,
+                                )
+                            },
                         )
                     }
-            ) {
-                val cellHeight = (maxHeight / maxPeriod).coerceIn(44.dp, 120.dp)
-                GridBody(
-                    settings = settings,
-                    courses = visibleCourses,
-                    selectedWeek = week,
-                    maxPeriod = maxPeriod,
+                    Column(Modifier.fillMaxSize()) {
+                        GridHeaderRow(
+                            monday = WeekUtils.mondayOfWeek(pageWeek, firstMonday),
+                            today = today,
+                            highlightToday = pageWeek == todayWeek,
+                        )
+                        GridBody(
+                            settings = settings,
+                            courses = pageList,
+                            dimmedIds = dimmed,
+                            hiddenCourseId = draggingId,
+                            maxPeriod = maxPeriod,
+                            cellHeight = cellHeight,
+                            highlightPeriod = if (pageWeek == todayWeek) currentPeriod else -1,
+                            scrollState = scrollState,
+                            dragModifier = dragGesture,
+                            onCourseClick = onCourseClick,
+                            onAddCourse = onAddCourse,
+                        )
+                    }
+                }
+
+                // 浮起的卡片 / 落点虚框 / 落地闪光：单独一层，只跟着手指重组
+                DragLayer(
+                    dragState = dragState,
+                    landingState = landingState,
+                    periodColPx = periodColPx,
+                    headerPx = headerPx,
+                    colPx = colPx,
                     cellHeight = cellHeight,
-                    todayWeekday = if (isCurrentWeek) today.dayOfWeek.value else -1,
-                    highlightPeriod = currentPeriod,
-                    onCourseClick = onCourseClick,
-                    onAddCourse = onAddCourse,
-                    modifier = Modifier.fillMaxSize(),
+                    cellPx = cellPx,
+                    maxPeriod = maxPeriod,
+                    areaHeightPx = areaHeightPx,
+                    scrollOffset = { scrollStates[pagerState.currentPage]?.value ?: 0 },
+                    currentScrollState = { scrollStates[pagerState.currentPage] },
                 )
             }
         }
@@ -185,6 +363,131 @@ fun WeekScreen(
                 "清空课表" to onClearCourses,
             ),
             onDismiss = { menuVisible = false },
+        )
+    }
+}
+
+/** 长按拖动中的状态。 */
+private data class CourseDrag(
+    val course: Course,
+    /** 手指相对卡片左上角的偏移，保证卡片不会「跳」到手指下面。 */
+    val grabX: Float,
+    val grabY: Float,
+    val x: Float,
+    val y: Float,
+    val targetWeekday: Int,
+    val targetPeriod: Int,
+    val allowed: Boolean,
+)
+
+private data class Landing(val weekday: Int, val period: Int, val span: Int)
+
+/**
+ * 拖动浮层。**只在这里读 [dragState]**，这样拖动时每帧重组的只有这一层，
+ * 课表网格本身一帧都不会重画。
+ */
+@Composable
+private fun DragLayer(
+    dragState: State<CourseDrag?>,
+    landingState: State<Landing?>,
+    periodColPx: Float,
+    headerPx: Float,
+    colPx: Float,
+    cellHeight: Dp,
+    cellPx: Float,
+    maxPeriod: Int,
+    areaHeightPx: Float,
+    scrollOffset: () -> Int,
+    currentScrollState: () -> ScrollState?,
+) {
+    val density = LocalDensity.current
+    val dark = LocalDarkTheme.current
+    val drag by dragState
+    val landing by landingState
+    val blockWidth = with(density) { (colPx - 4f).toDp() }
+
+    // 拖到上下边缘时自动滚课表：只在「靠边状态」变化时重启协程，不是每帧
+    val edgeStep by remember(areaHeightPx) {
+        derivedStateOf {
+            val y = dragState.value?.y ?: return@derivedStateOf 0f
+            val zone = with(density) { DRAG_EDGE_SCROLL_ZONE.toPx() }
+            val fromTop = y - headerPx
+            val fromBottom = areaHeightPx - y
+            when {
+                fromTop < zone -> -(((zone - fromTop) / zone).coerceIn(0f, 1f))
+                fromBottom < zone -> ((zone - fromBottom) / zone).coerceIn(0f, 1f)
+                else -> 0f
+            }
+        }
+    }
+    LaunchedEffect(edgeStep) {
+        if (edgeStep == 0f) return@LaunchedEffect
+        val state = currentScrollState() ?: return@LaunchedEffect
+        while (isActive) {
+            state.scrollBy(edgeStep * 18f)
+            delay(16)
+        }
+    }
+
+    if (drag != null) {
+        val current = drag!!
+        val maxStart = (maxPeriod - current.course.span + 1).coerceAtLeast(1)
+        val targetPeriod = current.targetPeriod.coerceIn(1, maxStart)
+        val scroll = scrollOffset()
+        val targetTop = headerPx + (targetPeriod - 1) * cellPx - scroll
+        val targetLeft = periodColPx + (current.targetWeekday - 1) * colPx
+        val accent = courseColor(current.course.colorKey, dark)
+        val blockHeight = cellHeight * current.course.span - 4.dp
+
+        // 落点虚框
+        GlassSurface(
+            modifier = Modifier
+                .offset { IntOffset(targetLeft.roundToInt(), targetTop.roundToInt()) }
+                .width(blockWidth)
+                .height(blockHeight),
+            shape = RoundedCornerShape(12.dp),
+            tint = if (current.allowed) accent else MaterialTheme.colorScheme.error,
+            tintAlpha = 0.26f,
+            borderWidth = 1.5.dp,
+        ) {}
+
+        // 浮起的卡片
+        GlassSurface(
+            modifier = Modifier
+                .offset {
+                    IntOffset(
+                        (current.x - current.grabX).roundToInt(),
+                        (current.y - current.grabY).roundToInt(),
+                    )
+                }
+                .scale(1.05f)
+                .width(blockWidth)
+                .height(blockHeight),
+            shape = RoundedCornerShape(12.dp),
+            tint = accent,
+            tintAlpha = 0.72f,
+            elevation = 12.dp,
+        ) {
+            CourseCellContent(course = current.course, modifier = Modifier.fillMaxSize())
+        }
+    } else if (landing != null) {
+        val settled = landing!!
+        val glow = remember(settled) { Animatable(0.85f) }
+        LaunchedEffect(settled) { glow.animateTo(0f, tween(560)) }
+        val top = headerPx + (settled.period - 1) * cellPx - scrollOffset()
+        val left = periodColPx + (settled.weekday - 1) * colPx
+        Box(
+            Modifier
+                .offset { IntOffset(left.roundToInt(), top.roundToInt()) }
+                .width(blockWidth)
+                .height(cellHeight * settled.span - 4.dp)
+                .alpha(glow.value)
+                .liquidGlass(
+                    shape = RoundedCornerShape(12.dp),
+                    colors = glassColors(),
+                    tint = MaterialTheme.colorScheme.primary,
+                    tintAlpha = 0.45f,
+                )
         )
     }
 }
@@ -227,24 +530,26 @@ private fun TopHeader(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 16.dp, end = 12.dp, top = 10.dp, bottom = 4.dp),
+            .padding(start = 16.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(
             Modifier
                 .weight(1f)
-                .clip(RoundedCornerShape(12.dp))
+                .clip(RoundedCornerShape(16.dp))
                 .clickable(onClick = onOpenToday)
+                .padding(vertical = 2.dp)
         ) {
             Text(
-                text = "第 $week 周",
+                text = if (isCurrentWeek) "本周 · 第 $week 周" else "第 $week 周",
                 fontSize = 12.5.sp,
+                fontWeight = FontWeight.Medium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             Spacer(Modifier.height(2.dp))
             Text(
                 text = bigText,
-                fontSize = 22.sp,
+                fontSize = 24.sp,
                 fontWeight = FontWeight.Bold,
                 color = MaterialTheme.colorScheme.onBackground,
                 maxLines = 1,
@@ -283,26 +588,29 @@ private fun WeekSwitcher(
                 size = 38.dp,
                 tint = if (week > 1) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outlineVariant,
             )
-            Row(
+            GlassSurface(
                 modifier = Modifier
                     .padding(horizontal = 10.dp)
-                    .clip(RoundedCornerShape(14.dp))
-                    .clickable { pickerVisible = true }
-                    .padding(horizontal = 12.dp, vertical = 6.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                    .clickable { pickerVisible = true },
+                shape = RoundedCornerShape(14.dp),
             ) {
-                Text(
-                    text = "第 $week 周",
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = MaterialTheme.colorScheme.onBackground,
-                )
-                Spacer(Modifier.width(3.dp))
-                GlyphIcon(
-                    Glyph.ChevronDown,
-                    MaterialTheme.colorScheme.onSurfaceVariant,
-                    size = 15.dp,
-                )
+                Row(
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Text(
+                        text = "第 $week 周",
+                        fontSize = 16.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                    )
+                    Spacer(Modifier.width(4.dp))
+                    GlyphIcon(
+                        Glyph.ChevronDown,
+                        MaterialTheme.colorScheme.onSurfaceVariant,
+                        size = 15.dp,
+                    )
+                }
             }
             CircleIconButton(
                 glyph = Glyph.ChevronRight,
@@ -398,67 +706,76 @@ private fun WeekPickerSheet(
     }
 }
 
-/** 表头：节次 | 周一(日期) … 周日(日期)，今天整列高亮。 */
+/** 表头：一条玻璃胶囊里放「节次 | 周一(日期) … 周日(日期)」，今天整列高亮。 */
 @Composable
 private fun GridHeaderRow(
     monday: LocalDate?,
     today: LocalDate,
     highlightToday: Boolean,
 ) {
-    Row(
+    GlassSurface(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(bottom = 4.dp),
-        verticalAlignment = Alignment.Bottom,
+            .padding(horizontal = 6.dp)
+            .height(HEADER_HEIGHT - 4.dp),
+        shape = RoundedCornerShape(18.dp),
     ) {
-        Box(
-            Modifier
-                .width(PERIOD_COLUMN_WIDTH)
-                .height(44.dp),
-            contentAlignment = Alignment.Center,
+        Row(
+            modifier = Modifier.fillMaxSize(),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                "节次",
-                fontSize = 11.5.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        for (weekday in 1..7) {
-            val date = monday?.plusDays((weekday - 1).toLong())
-            val isToday = highlightToday && date == today
             Box(
-                modifier = Modifier
-                    .weight(1f)
-                    .height(44.dp)
-                    .padding(horizontal = 1.dp)
-                    .clip(RoundedCornerShape(11.dp))
-                    .background(
-                        if (isToday) MaterialTheme.colorScheme.primary.copy(alpha = 0.14f) else Color.Transparent
-                    ),
+                Modifier.width(PERIOD_COLUMN_WIDTH),
                 contentAlignment = Alignment.Center,
             ) {
-                Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        text = WeekUtils.weekdayLabel(weekday),
-                        fontSize = 12.sp,
-                        fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Medium,
-                        color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                    )
-                    if (date != null) {
-                        Text(
-                            text = "${date.monthValue}/${date.dayOfMonth}",
-                            fontSize = 10.sp,
-                            color = if (isToday) {
-                                MaterialTheme.colorScheme.primary
+                Text(
+                    "节次",
+                    fontSize = 11.5.sp,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            for (weekday in 1..7) {
+                val date = monday?.plusDays((weekday - 1).toLong())
+                val isToday = highlightToday && date == today
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxSize()
+                        .padding(horizontal = 2.dp, vertical = 5.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .background(
+                            if (isToday) {
+                                MaterialTheme.colorScheme.primary.copy(alpha = 0.20f)
                             } else {
-                                MaterialTheme.colorScheme.onSurfaceVariant
-                            },
+                                Color.Transparent
+                            }
+                        ),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text(
+                            text = WeekUtils.weekdayLabel(weekday),
+                            fontSize = 12.sp,
+                            fontWeight = if (isToday) FontWeight.SemiBold else FontWeight.Medium,
+                            color = if (isToday) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                         )
+                        if (date != null) {
+                            Text(
+                                text = "${date.monthValue}/${date.dayOfMonth}",
+                                fontSize = 10.sp,
+                                color = if (isToday) {
+                                    MaterialTheme.colorScheme.primary
+                                } else {
+                                    MaterialTheme.colorScheme.onSurfaceVariant
+                                },
+                            )
+                        }
                     }
                 }
             }
         }
     }
+    Spacer(Modifier.height(4.dp))
 }
 
 private sealed interface Slot {
@@ -496,78 +813,98 @@ private fun layoutColumn(courses: List<Course>, maxPeriod: Int): List<Slot> {
 private fun GridBody(
     settings: AppSettings,
     courses: List<Course>,
-    selectedWeek: Int,
+    dimmedIds: Set<String>,
+    hiddenCourseId: String?,
     maxPeriod: Int,
-    cellHeight: androidx.compose.ui.unit.Dp,
-    todayWeekday: Int,
+    cellHeight: Dp,
     highlightPeriod: Int,
+    scrollState: ScrollState,
+    dragModifier: Modifier = Modifier,
     onCourseClick: (Course) -> Unit,
     onAddCourse: (Int, Int) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
     val dark = LocalDarkTheme.current
     Column(
-        modifier = modifier
+        modifier = Modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .verticalScroll(scrollState)
     ) {
-        Box(Modifier.fillMaxWidth()) {
+        Box(Modifier.fillMaxWidth().then(dragModifier)) {
             Row(Modifier.fillMaxWidth()) {
-            // 节次列
-            Column(Modifier.width(PERIOD_COLUMN_WIDTH)) {
-                for (period in 1..maxPeriod) {
-                    PeriodCell(
-                        period = period,
-                        time = settings.periods.firstOrNull { it.index == period },
-                        highlighted = period == highlightPeriod,
-                        cellHeight = cellHeight,
-                    )
+                // 节次列：也做成一条玻璃条，压在照片上时数字与时间才读得清
+                GlassSurface(
+                    modifier = Modifier
+                        .width(PERIOD_COLUMN_WIDTH)
+                        .height(cellHeight * maxPeriod),
+                    shape = RoundedCornerShape(14.dp),
+                ) {
+                    Column(Modifier.width(PERIOD_COLUMN_WIDTH)) {
+                        for (period in 1..maxPeriod) {
+                            PeriodCell(
+                                period = period,
+                                time = settings.periods.firstOrNull { it.index == period },
+                                highlighted = period == highlightPeriod,
+                                cellHeight = cellHeight,
+                            )
+                        }
+                    }
                 }
-            }
-            // 周一 … 周日（各占等宽，一屏放下）
-            for (weekday in 1..7) {
-                val dayCourses = remember(courses, weekday, maxPeriod) {
-                    layoutColumn(courses.filter { it.weekday == weekday }, maxPeriod)
-                }
-                Column(modifier = Modifier.weight(1f)) {
-                    dayCourses.forEach { slot ->
-                        when (slot) {
-                            is Slot.Block -> {
-                                Row(
-                                    Modifier
-                                        .height(cellHeight * slot.span - 2.dp)
-                                        .fillMaxWidth()
-                                        .padding(1.dp)
-                                ) {
-                                    slot.courses.forEach { course ->
-                                        CourseCell(
-                                            course = course,
-                                            dark = dark,
-                                            dimmed = settings.showOtherWeeks && !course.activeInWeek(selectedWeek),
-                                            modifier = Modifier
-                                                .weight(1f)
-                                                .fillMaxSize(),
-                                            onClick = { onCourseClick(course) },
-                                        )
+                // 周一 … 周日（各占等宽，一屏放下）
+                for (weekday in 1..7) {
+                    val daySlots = remember(courses, weekday, maxPeriod) {
+                        layoutColumn(courses.filter { it.weekday == weekday }, maxPeriod)
+                    }
+                    Column(modifier = Modifier.weight(1f)) {
+                        daySlots.forEach { slot ->
+                            when (slot) {
+                                is Slot.Block -> {
+                                    // 一格最多并排 3 门，多的折成 +N（正常情况下并存不下来）
+                                    val shown = slot.courses.take(MAX_OVERLAP)
+                                    val overflow = slot.courses.size - shown.size
+                                    Row(
+                                        Modifier
+                                            .height(cellHeight * slot.span - 2.dp)
+                                            .fillMaxWidth()
+                                            .padding(1.dp)
+                                    ) {
+                                        shown.forEach { course ->
+                                            CourseCell(
+                                                course = course,
+                                                dark = dark,
+                                                dimmed = course.id in dimmedIds,
+                                                hidden = course.id == hiddenCourseId,
+                                                modifier = Modifier
+                                                    .weight(1f)
+                                                    .fillMaxSize(),
+                                                onClick = { onCourseClick(course) },
+                                            )
+                                        }
+                                        if (overflow > 0) {
+                                            OverflowCell(
+                                                count = overflow,
+                                                modifier = Modifier
+                                                    .weight(0.55f)
+                                                    .fillMaxSize(),
+                                            )
+                                        }
                                     }
                                 }
-                            }
 
-                            is Slot.Empty -> {
-                                Box(
-                                    Modifier
-                                        .height(cellHeight)
-                                        .fillMaxWidth()
-                                        .padding(1.dp)
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { onAddCourse(weekday, slot.period) }
-                                )
+                                is Slot.Empty -> {
+                                    Box(
+                                        Modifier
+                                            .height(cellHeight)
+                                            .fillMaxWidth()
+                                            .padding(1.dp)
+                                            .clip(RoundedCornerShape(10.dp))
+                                            .clickable { onAddCourse(weekday, slot.period) }
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
-            Box(Modifier.width(2.dp).height(cellHeight * maxPeriod))
+                Box(Modifier.width(2.dp).height(cellHeight * maxPeriod))
             }
             // 上午 / 下午 / 晚上的分界线（只画线不占高度，保证各列节次仍对齐）
             SECTION_BREAKS.forEach { afterPeriod ->
@@ -583,7 +920,7 @@ private fun GridBody(
 
 /** 跨整行的一条细分界线，用来区分上午 / 下午 / 晚上。 */
 @Composable
-private fun SectionDivider(offsetY: androidx.compose.ui.unit.Dp) {
+private fun SectionDivider(offsetY: Dp) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -593,7 +930,7 @@ private fun SectionDivider(offsetY: androidx.compose.ui.unit.Dp) {
             Modifier
                 .fillMaxWidth()
                 .height(1.dp)
-                .background(MaterialTheme.colorScheme.outlineVariant)
+                .background(MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f))
         )
     }
 }
@@ -603,7 +940,7 @@ private fun PeriodCell(
     period: Int,
     time: PeriodTime?,
     highlighted: Boolean,
-    cellHeight: androidx.compose.ui.unit.Dp,
+    cellHeight: Dp,
 ) {
     Column(
         modifier = Modifier
@@ -614,7 +951,7 @@ private fun PeriodCell(
     ) {
         Box(
             modifier = Modifier
-                .clip(RoundedCornerShape(7.dp))
+                .clip(RoundedCornerShape(8.dp))
                 .background(if (highlighted) MaterialTheme.colorScheme.primary else Color.Transparent)
                 .padding(horizontal = 7.dp, vertical = 1.dp),
         ) {
@@ -646,23 +983,44 @@ private fun PeriodCell(
     }
 }
 
-/** 一个课程格子。列宽约 45dp，所以字小、行数按跨越的节次决定。 */
+/**
+ * 一个课程格子：毛玻璃卡片 + 课程色染色。
+ *
+ * 注意这里**不加外阴影**——一屏几十个格子每个都投影会明显掉帧，
+ * 玻璃感由填充渐变 + 顶部高光 + 描边提供就够了。
+ */
 @Composable
 private fun CourseCell(
     course: Course,
     dark: Boolean,
     dimmed: Boolean,
+    hidden: Boolean,
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
     val accent = courseColor(course.colorKey, dark)
-    Column(
+    GlassSurface(
         modifier = modifier
-            .alpha(if (dimmed) 0.4f else 1f)
-            .clip(RoundedCornerShape(9.dp))
-            .background(accent.copy(alpha = if (dark) 0.26f else 0.17f))
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp, vertical = 3.dp),
+            .alpha(if (hidden) 0.25f else if (dimmed) 0.45f else 1f)
+            .padding(1.dp)
+            .clickable(onClick = onClick),
+        shape = RoundedCornerShape(11.dp),
+        tint = accent,
+        tintAlpha = if (dark) 0.34f else 0.30f,
+        borderWidth = 0.8.dp,
+    ) {
+        CourseCellContent(course = course, modifier = Modifier.fillMaxSize())
+    }
+}
+
+/** 课程卡片里的内容（网格里和拖动浮层共用，保证拖动时长得一模一样）。 */
+@Composable
+private fun CourseCellContent(
+    course: Course,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier.padding(horizontal = 2.dp, vertical = 3.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Text(
@@ -685,6 +1043,27 @@ private fun CourseCell(
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
+            )
+        }
+    }
+}
+
+/** 一格塞不下时显示的「+N」。 */
+@Composable
+private fun OverflowCell(count: Int, modifier: Modifier = Modifier) {
+    GlassSurface(
+        modifier = modifier.padding(1.dp),
+        shape = RoundedCornerShape(11.dp),
+        tint = MaterialTheme.colorScheme.onSurface,
+        tintAlpha = 0.16f,
+        borderWidth = 0.8.dp,
+    ) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Text(
+                text = "+$count",
+                fontSize = 9.5.sp,
+                fontWeight = FontWeight.Medium,
+                color = MaterialTheme.colorScheme.onSurface,
             )
         }
     }

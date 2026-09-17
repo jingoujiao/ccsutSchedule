@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -34,6 +33,8 @@ import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.COURSE_COLOR_COUNT
 import com.jingoujiao.ccsutschedule.data.Course
+import com.jingoujiao.ccsutschedule.data.MAX_OVERLAP
+import com.jingoujiao.ccsutschedule.data.OverlapRules
 import com.jingoujiao.ccsutschedule.data.WeekUtils
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
 import com.jingoujiao.ccsutschedule.ui.theme.courseColor
@@ -136,15 +137,27 @@ fun CourseEditorScreen(
     var weeks by remember { mutableStateOf(original?.weeks?.toSet() ?: defaultWeeks.toSet()) }
     var colorKey by remember { mutableStateOf(original?.colorKey ?: 0) }
 
-    val canSave = name.isNotBlank() && periods.isNotEmpty()
-    val conflicts = remember(weekday, periods, weeks, allCourses) {
-        allCourses.filter { other ->
-            other.id != original?.id &&
-                other.weekday == weekday &&
-                other.periods.any { it in periods } &&
-                (other.weeks.isEmpty() || weeks.isEmpty() || other.weeks.any { it in weeks })
-        }
+    val draftCourse = remember(name, teacher, location, note, weekday, periods, weeks, colorKey, original) {
+        Course(
+            id = original?.id ?: "new",
+            name = name.trim(),
+            teacher = teacher.trim(),
+            location = location.trim(),
+            weekday = weekday,
+            periods = periods.sorted(),
+            weeks = weeks.sorted(),
+            colorKey = colorKey,
+            note = note.trim(),
+        )
     }
+    // 重叠上限：到顶就不让存，避免一格挤成一团
+    val overlapReason = remember(draftCourse, allCourses) {
+        OverlapRules.rejectReason(draftCourse, allCourses)
+    }
+    val conflicts = remember(draftCourse, allCourses) {
+        OverlapRules.conflictsWith(draftCourse, allCourses)
+    }
+    val canSave = name.isNotBlank() && periods.isNotEmpty() && overlapReason == null
 
     Column(Modifier.fillMaxSize()) {
         ScreenHeader(
@@ -155,18 +168,9 @@ fun CourseEditorScreen(
                 PrimaryButton(
                     text = "保存",
                     onClick = {
-                        val sortedPeriods = periods.sorted()
                         onSave(
-                            Course(
+                            draftCourse.copy(
                                 id = original?.id ?: com.jingoujiao.ccsutschedule.data.CourseFactory.newId(),
-                                name = name.trim(),
-                                teacher = teacher.trim(),
-                                location = location.trim(),
-                                weekday = weekday,
-                                periods = sortedPeriods,
-                                weeks = weeks.sorted(),
-                                colorKey = colorKey,
-                                note = note.trim(),
                             )
                         )
                     },
@@ -213,13 +217,25 @@ fun CourseEditorScreen(
                     },
                     perRow = 8,
                 )
-                if (conflicts.isNotEmpty()) {
+                if (overlapReason != null) {
+                    Spacer(Modifier.height(10.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        GlyphIcon(Glyph.Warning, MaterialTheme.colorScheme.error, size = 15.dp)
+                        Spacer(Modifier.width(6.dp))
+                        Text(
+                            overlapReason,
+                            fontSize = 12.sp,
+                            color = MaterialTheme.colorScheme.error,
+                        )
+                    }
+                } else if (conflicts.isNotEmpty()) {
                     Spacer(Modifier.height(10.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         GlyphIcon(Glyph.Warning, MaterialTheme.colorScheme.tertiary, size = 15.dp)
                         Spacer(Modifier.width(6.dp))
                         Text(
-                            "与「${conflicts.joinToString("、") { it.name.ifBlank { "未命名" } }}」时间重叠",
+                            "与「${conflicts.joinToString("、") { it.name.ifBlank { "未命名" } }}」时间重叠" +
+                                "（同一时段最多 $MAX_OVERLAP 门）",
                             fontSize = 12.sp,
                             color = MaterialTheme.colorScheme.tertiary,
                         )

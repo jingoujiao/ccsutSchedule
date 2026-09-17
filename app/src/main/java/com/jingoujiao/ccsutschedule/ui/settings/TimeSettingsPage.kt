@@ -1,7 +1,6 @@
 package com.jingoujiao.ccsutschedule.ui.settings
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,10 +13,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -34,7 +31,9 @@ import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.PeriodTime
 import com.jingoujiao.ccsutschedule.data.WeekUtils
 import com.jingoujiao.ccsutschedule.ui.CardSurface
+import com.jingoujiao.ccsutschedule.ui.CcsutDialog
 import com.jingoujiao.ccsutschedule.ui.Glyph
+import com.jingoujiao.ccsutschedule.ui.PrimaryButton
 import com.jingoujiao.ccsutschedule.ui.SecondaryButton
 import com.jingoujiao.ccsutschedule.ui.SectionLabel
 import com.jingoujiao.ccsutschedule.ui.SettingRow
@@ -151,10 +150,14 @@ private fun SimpleDatePicker(
     // 一律对齐到所选日期所在周的周一，避免用户选到周中导致整学期偏移
     val firstMonday = WeekUtils.mondayOf(picked)
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("课表第 1 周的周一") },
-        text = {
+    CcsutDialog(
+        title = "课表第 1 周的周一",
+        onDismiss = onDismiss,
+        buttons = {
+            SecondaryButton("取消", onDismiss, modifier = Modifier.weight(1f))
+            PrimaryButton("确定", { onConfirm(firstMonday) }, modifier = Modifier.weight(1f))
+        },
+    ) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "选正式上课第 1 周的周一，不是开学日。",
@@ -216,10 +219,7 @@ private fun SimpleDatePicker(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-        },
-        confirmButton = { TextButton(onClick = { onConfirm(firstMonday) }) { Text("确定") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+        }
 }
 
 @Composable
@@ -246,10 +246,14 @@ private fun PeriodEditorDialog(
     onDismiss: () -> Unit,
 ) {
     var draft by remember { mutableStateOf(periods) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("作息时间表") },
-        text = {
+    CcsutDialog(
+        title = "作息时间表",
+        onDismiss = onDismiss,
+        buttons = {
+            SecondaryButton("取消", onDismiss, modifier = Modifier.weight(1f))
+            PrimaryButton("保存", { onConfirm(draft) }, modifier = Modifier.weight(1f))
+        },
+    ) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 Text(
                     "按 24 小时制填写，例如 08:20 / 09:05。",
@@ -299,10 +303,7 @@ private fun PeriodEditorDialog(
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = { onConfirm(draft) }) { Text("保存") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+        }
 }
 
 @Composable

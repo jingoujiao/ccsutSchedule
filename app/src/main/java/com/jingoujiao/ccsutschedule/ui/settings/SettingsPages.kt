@@ -11,12 +11,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -32,10 +30,12 @@ import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.UpdateChecker
 import com.jingoujiao.ccsutschedule.data.UpdateSource
 import com.jingoujiao.ccsutschedule.ui.CardSurface
+import com.jingoujiao.ccsutschedule.ui.CcsutDialog
 import com.jingoujiao.ccsutschedule.ui.ConfirmDialog
 import com.jingoujiao.ccsutschedule.ui.Glyph
 import com.jingoujiao.ccsutschedule.ui.LabeledTextField
 import com.jingoujiao.ccsutschedule.ui.PrimaryButton
+import com.jingoujiao.ccsutschedule.ui.SecondaryButton
 import com.jingoujiao.ccsutschedule.ui.SettingRow
 import com.jingoujiao.ccsutschedule.ui.SwitchRow
 import com.jingoujiao.ccsutschedule.ui.UpdateUi
@@ -227,10 +227,18 @@ private fun UpdateSourceDialog(
     var selected by remember { mutableStateOf(current) }
     var mirror by remember { mutableStateOf(customMirror) }
     var repo by remember { mutableStateOf(giteeRepo) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("更新包下载源") },
-        text = {
+    CcsutDialog(
+        title = "更新包下载源",
+        onDismiss = onDismiss,
+        buttons = {
+            SecondaryButton("取消", onDismiss, modifier = Modifier.weight(1f))
+            PrimaryButton(
+                "保存",
+                { onConfirm(selected, mirror.trim(), repo.trim()) },
+                modifier = Modifier.weight(1f),
+            )
+        },
+    ) {
             Column(Modifier.verticalScroll(rememberScrollState())) {
                 UpdateSource.all.forEach { source ->
                     Row(
@@ -288,10 +296,5 @@ private fun UpdateSourceDialog(
                     )
                 }
             }
-        },
-        confirmButton = {
-            TextButton(onClick = { onConfirm(selected, mirror.trim(), repo.trim()) }) { Text("保存") }
-        },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("取消") } },
-    )
+        }
 }
