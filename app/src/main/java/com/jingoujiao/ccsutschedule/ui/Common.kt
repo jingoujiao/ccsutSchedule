@@ -68,6 +68,7 @@ import androidx.compose.ui.window.DialogProperties
 import androidx.compose.ui.window.Popup
 import androidx.compose.ui.window.PopupProperties
 import com.jingoujiao.ccsutschedule.data.AppSettings
+import com.jingoujiao.ccsutschedule.data.BackgroundPresets
 import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
 import com.jingoujiao.ccsutschedule.ui.theme.hsl
@@ -82,12 +83,21 @@ import kotlinx.coroutines.withContext
  */
 @Composable
 fun AppBackground(settings: AppSettings, content: @Composable BoxScope.() -> Unit) {
-    val bitmap by produceState<ImageBitmap?>(initialValue = null, settings.backgroundImagePath) {
-        val path = settings.backgroundImagePath
-        value = if (path.isBlank()) {
-            null
-        } else {
-            withContext(Dispatchers.IO) { decodeScaledBitmap(path) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val bitmap by produceState<ImageBitmap?>(
+        initialValue = null,
+        settings.backgroundImagePath,
+        settings.backgroundPreset,
+    ) {
+        value = withContext(Dispatchers.IO) {
+            val path = settings.backgroundImagePath
+            if (path.isNotBlank()) {
+                decodeScaledBitmap(path)
+            } else {
+                // 内置壁纸：自定义图片优先，其次才是内置的那几张
+                BackgroundPresets.of(settings.backgroundPreset)
+                    ?.let { decodeScaledResource(context.resources, it.resId) }
+            }
         }
     }
     val dark = LocalDarkTheme.current
@@ -103,17 +113,20 @@ fun AppBackground(settings: AppSettings, content: @Composable BoxScope.() -> Uni
                 if (image != null) drawImageCropped(image, alpha)
                 // 顶部/底部蒙层：文字颜色是跟着主题走的，所以蒙层也用主题底色——
                 // 浅色主题配深色照片、深色主题配浅色照片都能读清，只把壁纸压成一层雾。
+                // 顶部（大号日期那一行）压得更重一点，中间几乎不动，保证壁纸还是壁纸。
                 val scrim = if (dark) {
-                    Color.Black.copy(alpha = 0.46f)
+                    Color.Black.copy(alpha = 0.55f)
                 } else {
-                    hsl(hue.toFloat(), 0.30f, 0.97f).copy(alpha = 0.62f)
+                    hsl(hue.toFloat(), 0.30f, 0.97f).copy(alpha = 0.72f)
                 }
                 drawRect(
                     brush = Brush.verticalGradient(
                         0f to scrim,
-                        0.22f to Color.Transparent,
-                        0.78f to Color.Transparent,
-                        1f to scrim.copy(alpha = scrim.alpha * 0.9f),
+                        0.14f to scrim.copy(alpha = scrim.alpha * 0.55f),
+                        0.32f to Color.Transparent,
+                        0.72f to Color.Transparent,
+                        0.90f to scrim.copy(alpha = scrim.alpha * 0.45f),
+                        1f to scrim.copy(alpha = scrim.alpha * 0.8f),
                     ),
                     size = size,
                 )
@@ -177,6 +190,23 @@ private fun decodeScaledBitmap(path: String): ImageBitmap? = try {
     while (bounds.outWidth / sample > 1600 || bounds.outHeight / sample > 2400) sample *= 2
     val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
     android.graphics.BitmapFactory.decodeFile(path, options)?.asImageBitmap()
+} catch (_: Throwable) {
+    null
+}
+
+/** 内置壁纸走资源解码，同样按需降采样，避免整张原图进内存。 */
+internal fun decodeScaledResource(
+    resources: android.content.res.Resources,
+    resourceId: Int,
+    maxWidth: Int = 1600,
+    maxHeight: Int = 2400,
+): ImageBitmap? = try {
+    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    android.graphics.BitmapFactory.decodeResource(resources, resourceId, bounds)
+    var sample = 1
+    while (bounds.outWidth / sample > maxWidth || bounds.outHeight / sample > maxHeight) sample *= 2
+    val options = android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }
+    android.graphics.BitmapFactory.decodeResource(resources, resourceId, options)?.asImageBitmap()
 } catch (_: Throwable) {
     null
 }

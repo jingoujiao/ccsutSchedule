@@ -91,8 +91,10 @@ data class AppSettings(
     val themeMode: String = ThemeMode.SYSTEM,
     /** 主题主色相（0..359），由配色方案决定。 */
     val paletteHue: Int = 222,
-    /** 自定义背景图片的绝对路径（App 私有目录内）。 */
+    /** 自定义背景图片的绝对路径（App 私有目录内）；为空时用 [backgroundPreset]。 */
     val backgroundImagePath: String = "",
+    /** 内置壁纸 id，见 [BackgroundPresets]；空字符串表示只用渐变底色。 */
+    val backgroundPreset: String = BackgroundPresets.DEFAULT_ID,
     /** 背景图不透明度 0..1。 */
     val backgroundAlpha: Float = 0.28f,
     /** 是否在网格里用淡色显示非本周课程。 */
