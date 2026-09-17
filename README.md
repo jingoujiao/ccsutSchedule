@@ -191,6 +191,9 @@ App 侧行为：「检查更新」手动检查；「自动检查更新」在启�
 | 课表字号 / 不透明度 | 模拟器实测：字号「特大」后课程名、教室、表头日期一起变大且不裁切；不透明度 45%（配合 85% 字号）后课程文字明显变淡 |
 | 纵向滚动 | 模拟器实测：纵向滚动时左侧节次列与课程网格始终对齐（共用同一个 `ScrollState`），表头固定不动 |
 | APK | `:app:assembleDebug` 成功（约 13 MB），`adb install` 在 Android 36 模拟器上安装、切周、拖动、弹层、设置项全部无崩溃 |
+| 正式包（1.4.0） | `:app:assembleRelease` 用 `tmp/ccsut-release.keystore` 签名，产物 9.5 MB（`dist/ccsutSchedule-1.4.0.apk`，SHA-256 `4900ff1a…83ba3`）；`apksigner` 校验 v2 签名通过，证书 SHA-256 `2e106108…4f62bd` 与 1.2.x / 1.3.0 同一把密钥（老用户可覆盖安装） |
+| 发布（1.4.0） | GitHub 与 Gitee 的 `releases/latest` 都返回 `v1.4.0` 且带 `ccsutSchedule-1.4.0.apk`；GitHub 是轻量标签指向 `0d5a018`，Gitee 是附注标签（`69e0a58`）也 peel 到同一个提交；两个源下载下来的 APK 与本地 `dist/` 产物**逐字节一致** |
+| 更新全链路（1.4.0） | 模拟器装上正式包 1.3.0 → 启动自动检查到「发现新版本 1.4.0」并显示 Release 说明 → 点「下载并安装」，「正在下载新版本」的**来源显示 `Gitee 直连`** → 进度走完提示「下载完成，点安装」 |
 
 ## xskb.xlsx 解析约定
 
