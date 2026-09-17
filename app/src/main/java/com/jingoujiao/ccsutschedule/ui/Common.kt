@@ -574,10 +574,11 @@ fun CcsutSheet(
         properties = PopupProperties(focusable = true),
     ) {
         Box(Modifier.fillMaxSize()) {
+            // 遮罩压暗：弹层打开时，后面的课表文字不能和弹层里的字叠在一起
             Box(
                 Modifier
                     .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.42f))
+                    .background(Color.Black.copy(alpha = 0.50f))
                     .clickable(onClick = onDismiss)
             )
             AnimatedVisibility(

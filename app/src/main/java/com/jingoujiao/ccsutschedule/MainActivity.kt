@@ -46,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.BlurredEdgeTreatment
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
@@ -241,11 +243,22 @@ private fun AppRoot(repo: ScheduleRepository) {
 
     CcsutTheme(state.settings) {
         AppBackground(state.settings) {
+            // 弹层/全屏页打开时，下面的课表要糊掉：不然两层文字叠在一起，谁都读不清。
+            // Android 12+ 是真模糊（RenderEffect），低版本退化成一层次级遮罩，一样能读清。
+            val modalOpen = overlay != null || detailCourseId != null ||
+                pendingDelete != null || clearConfirm
             Box(Modifier.fillMaxSize()) {
                 Column(
                     Modifier
                         .fillMaxSize()
                         .windowInsetsPadding(WindowInsets.safeDrawing)
+                        .then(
+                            if (modalOpen) {
+                                Modifier.blur(22.dp, BlurredEdgeTreatment.Unbounded)
+                            } else {
+                                Modifier
+                            }
+                        )
                 ) {
                     Box(Modifier.weight(1f)) {
                         when (tab) {

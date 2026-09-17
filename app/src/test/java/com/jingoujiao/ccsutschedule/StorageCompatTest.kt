@@ -2,6 +2,7 @@ package com.jingoujiao.ccsutschedule
 
 import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.Course
+import com.jingoujiao.ccsutschedule.data.CourseCardStyle
 import com.jingoujiao.ccsutschedule.data.JsonStore
 import com.jingoujiao.ccsutschedule.data.LEGACY_DEFAULT_PERIOD_TIMES
 import com.jingoujiao.ccsutschedule.data.PeriodTime
@@ -50,6 +51,35 @@ class StorageCompatTest {
         assertEquals("", state.settings.firstWeekMonday)
         assertEquals(20, state.settings.totalWeeks)
         assertEquals(10, state.settings.periods.size)
+    }
+
+    /** 1.4.0 新增的外观字段：老数据读进来必须是「课程配色 + 100% 字号 + 100% 不透明度」。 */
+    @Test
+    fun appearanceFieldsAddedIn140DefaultToCurrentLook() {
+        val state = json.decodeFromString(AppStateData.serializer(), """{"schedule":{"courses":[]}}""")
+        assertEquals(CourseCardStyle.COLORED, state.settings.courseCardStyle)
+        assertEquals(1f, state.settings.scheduleFontScale, 0.0001f)
+        assertEquals(1f, state.settings.scheduleFontAlpha, 0.0001f)
+        assertTrue(CourseCardStyle.usesCourseColor(state.settings.courseCardStyle))
+        assertTrue(!CourseCardStyle.usesCourseColor(CourseCardStyle.GLASS))
+    }
+
+    @Test
+    fun appearanceFieldsRoundTrip() {
+        val state = AppStateData().let {
+            it.copy(
+                settings = it.settings.copy(
+                    courseCardStyle = CourseCardStyle.GLASS,
+                    scheduleFontScale = 1.25f,
+                    scheduleFontAlpha = 0.6f,
+                )
+            )
+        }
+        val encoded = json.encodeToString(AppStateData.serializer(), state)
+        val decoded = json.decodeFromString(AppStateData.serializer(), encoded)
+        assertEquals(CourseCardStyle.GLASS, decoded.settings.courseCardStyle)
+        assertEquals(1.25f, decoded.settings.scheduleFontScale, 0.0001f)
+        assertEquals(0.6f, decoded.settings.scheduleFontAlpha, 0.0001f)
     }
 
     @Test

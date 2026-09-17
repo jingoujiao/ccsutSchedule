@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.COURSE_COLOR_COUNT
 import com.jingoujiao.ccsutschedule.data.Course
+import com.jingoujiao.ccsutschedule.data.CourseCardStyle
 import com.jingoujiao.ccsutschedule.data.MAX_OVERLAP
 import com.jingoujiao.ccsutschedule.data.OverlapRules
 import com.jingoujiao.ccsutschedule.data.WeekUtils
@@ -50,15 +51,18 @@ fun CourseDetailSheet(
 ) {
     val dark = LocalDarkTheme.current
     val accent = courseColor(course.colorKey, dark)
+    val showAccent = CourseCardStyle.usesCourseColor(settings.courseCardStyle)
     CcsutSheet(visible = true, onDismiss = onDismiss) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Box(
-                Modifier
-                    .size(12.dp)
-                    .clip(CircleShape)
-                    .background(accent)
-            )
-            Spacer(Modifier.width(10.dp))
+            if (showAccent) {
+                Box(
+                    Modifier
+                        .size(12.dp)
+                        .clip(CircleShape)
+                        .background(accent)
+                )
+                Spacer(Modifier.width(10.dp))
+            }
             Text(
                 course.name.ifBlank { "未命名课程" },
                 fontSize = 20.sp,
@@ -269,26 +273,28 @@ fun CourseEditorScreen(
                 )
             }
 
-            CardSurface {
-                SectionLabel("课程颜色")
-                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    for (index in 0 until COURSE_COLOR_COUNT) {
-                        val color = courseColor(index, dark)
-                        Box(
-                            Modifier
-                                .size(30.dp)
-                                .clip(CircleShape)
-                                .background(color)
-                                .border(
-                                    width = if (index == colorKey) 2.5.dp else 0.dp,
-                                    color = if (index == colorKey) MaterialTheme.colorScheme.onSurface else color,
-                                    shape = CircleShape,
-                                )
-                                .clickable { colorKey = index },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            if (index == colorKey) {
-                                GlyphIcon(Glyph.Check, androidx.compose.ui.graphics.Color.White, size = 15.dp)
+            if (CourseCardStyle.usesCourseColor(settings.courseCardStyle)) {
+                CardSurface {
+                    SectionLabel("课程颜色")
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (index in 0 until COURSE_COLOR_COUNT) {
+                            val color = courseColor(index, dark)
+                            Box(
+                                Modifier
+                                    .size(30.dp)
+                                    .clip(CircleShape)
+                                    .background(color)
+                                    .border(
+                                        width = if (index == colorKey) 2.5.dp else 0.dp,
+                                        color = if (index == colorKey) MaterialTheme.colorScheme.onSurface else color,
+                                        shape = CircleShape,
+                                    )
+                                    .clickable { colorKey = index },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                if (index == colorKey) {
+                                    GlyphIcon(Glyph.Check, androidx.compose.ui.graphics.Color.White, size = 15.dp)
+                                }
                             }
                         }
                     }

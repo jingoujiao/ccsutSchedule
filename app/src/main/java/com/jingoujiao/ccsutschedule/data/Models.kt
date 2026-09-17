@@ -99,6 +99,12 @@ data class AppSettings(
     val backgroundAlpha: Float = 0.28f,
     /** 玻璃模糊度（磨砂强度）0..1，见 [DEFAULT_GLASS_FROST]。 */
     val glassFrost: Float = DEFAULT_GLASS_FROST,
+    /** 课程卡片风格，见 [CourseCardStyle]。 */
+    val courseCardStyle: String = CourseCardStyle.COLORED,
+    /** 课表字号倍率，见 [SCHEDULE_FONT_SCALE_RANGE]。 */
+    val scheduleFontScale: Float = 1f,
+    /** 课表文字不透明度（能见度），1 = 完全不透明。 */
+    val scheduleFontAlpha: Float = 1f,
     /** 是否在网格里用淡色显示非本周课程。 */
     val showOtherWeeks: Boolean = false,
     /** 启动时自动检查更新。 */
@@ -211,6 +217,31 @@ object PalettePresets {
 
     fun of(hue: Int): Preset = all.minByOrNull { kotlin.math.abs(it.hue - hue) } ?: all.first()
 }
+
+/**
+ * 课程卡片的两种外观方案：
+ *  - [COLORED]：现在这样——毛玻璃 + 每门课自己的颜色（同色系课程更好认）；
+ *  - [GLASS]：课程本体和底部按钮一样，是统一的透明磨砂玻璃，不带各自的颜色。
+ */
+object CourseCardStyle {
+    const val COLORED = "colored"
+    const val GLASS = "glass"
+
+    val all: List<String> = listOf(COLORED, GLASS)
+
+    fun label(style: String): String = when (style) {
+        GLASS -> "统一玻璃"
+        else -> "课程配色"
+    }
+
+    fun usesCourseColor(style: String): Boolean = style != GLASS
+}
+
+/** 课表字号倍率范围：小于 1 更紧凑，大于 1 更醒目。 */
+val SCHEDULE_FONT_SCALE_RANGE = 0.8f..1.6f
+
+/** 课表文字不透明度范围（能见度）。 */
+val SCHEDULE_FONT_ALPHA_RANGE = 0.4f..1f
 
 /** 课程卡片配色数量，配色由 [com.jingoujiao.ccsutschedule.ui.theme.courseColor] 按 key 推导。 */
 const val COURSE_COLOR_COUNT = 12

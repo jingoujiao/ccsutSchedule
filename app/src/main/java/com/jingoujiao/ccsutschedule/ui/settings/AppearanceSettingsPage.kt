@@ -35,7 +35,10 @@ import androidx.compose.ui.unit.sp
 import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.AppStateData
 import com.jingoujiao.ccsutschedule.data.BackgroundPresets
+import com.jingoujiao.ccsutschedule.data.CourseCardStyle
 import com.jingoujiao.ccsutschedule.data.PalettePresets
+import com.jingoujiao.ccsutschedule.data.SCHEDULE_FONT_ALPHA_RANGE
+import com.jingoujiao.ccsutschedule.data.SCHEDULE_FONT_SCALE_RANGE
 import com.jingoujiao.ccsutschedule.data.ThemeMode
 import com.jingoujiao.ccsutschedule.ui.CardSurface
 import com.jingoujiao.ccsutschedule.ui.CcsutSlider
@@ -223,6 +226,71 @@ fun AppearanceSettingsPage(
                     )
                 }
             }
+        }
+
+        CardSurface {
+            SettingRow(
+                title = "课程卡片风格",
+                subtitle = CourseCardStyle.label(settings.courseCardStyle) +
+                    if (settings.courseCardStyle == CourseCardStyle.GLASS) {
+                        "：课程本体和按钮一样，是统一的透明磨砂玻璃"
+                    } else {
+                        "：每门课有自己的颜色，毛玻璃上再叠一层课程色"
+                    },
+                glyph = Glyph.Palette,
+            )
+            Spacer(Modifier.height(10.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                CourseCardStyle.all.forEach { style ->
+                    PillChip(
+                        text = CourseCardStyle.label(style),
+                        selected = settings.courseCardStyle == style,
+                        onClick = { onUpdateSettings { it.copy(courseCardStyle = style) } },
+                    )
+                }
+            }
+        }
+
+        CardSurface {
+            SettingRow(
+                title = "课表字号",
+                subtitle = "${(settings.scheduleFontScale * 100).toInt()}%　" +
+                    "课程名、教室与表头日期一起缩放",
+                glyph = Glyph.Clock,
+            )
+            Spacer(Modifier.height(6.dp))
+            CcsutSlider(
+                value = settings.scheduleFontScale,
+                onValueChange = { value -> onUpdateSettings { it.copy(scheduleFontScale = value) } },
+                valueRange = SCHEDULE_FONT_SCALE_RANGE,
+            )
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                listOf(
+                    "小" to 0.85f,
+                    "标准" to 1f,
+                    "大" to 1.2f,
+                    "特大" to 1.45f,
+                ).forEach { (label, value) ->
+                    PillChip(
+                        text = label,
+                        selected = kotlin.math.abs(settings.scheduleFontScale - value) < 0.02f,
+                        onClick = { onUpdateSettings { it.copy(scheduleFontScale = value) } },
+                    )
+                }
+            }
+            Spacer(Modifier.height(14.dp))
+            SettingRow(
+                title = "课表文字不透明度",
+                subtitle = "${(settings.scheduleFontAlpha * 100).toInt()}%　" +
+                    "嫌字太淡就拉满，想更透一点就往下调",
+                glyph = Glyph.Info,
+            )
+            Spacer(Modifier.height(6.dp))
+            CcsutSlider(
+                value = settings.scheduleFontAlpha,
+                onValueChange = { value -> onUpdateSettings { it.copy(scheduleFontAlpha = value) } },
+                valueRange = SCHEDULE_FONT_ALPHA_RANGE,
+            )
         }
 
         CardSurface {
