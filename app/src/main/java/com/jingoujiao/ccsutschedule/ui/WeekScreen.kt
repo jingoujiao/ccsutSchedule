@@ -73,6 +73,8 @@ import com.jingoujiao.ccsutschedule.data.WeekUtils
 import com.jingoujiao.ccsutschedule.data.coursesVisibleInWeek
 import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
+import com.jingoujiao.ccsutschedule.ui.theme.LocalGlassFrost
+import com.jingoujiao.ccsutschedule.ui.theme.LocalHazeState
 import com.jingoujiao.ccsutschedule.ui.theme.courseColor
 import com.jingoujiao.ccsutschedule.ui.theme.glassColors
 import com.jingoujiao.ccsutschedule.ui.theme.liquidGlass
@@ -453,6 +455,8 @@ private fun DragLayer(
                 .liquidGlass(
                     shape = RoundedCornerShape(12.dp),
                     colors = glassColors(),
+                    hazeState = LocalHazeState.current,
+                    frost = LocalGlassFrost.current,
                     tint = MaterialTheme.colorScheme.primary,
                     tintAlpha = 0.45f,
                 )

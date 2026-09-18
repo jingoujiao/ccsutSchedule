@@ -203,7 +203,7 @@ fun AppearanceSettingsPage(
             SettingRow(
                 title = "玻璃模糊度",
                 subtitle = "${(settings.glassFrost * 100).toInt()}%　" +
-                    "数字越大，课程卡片/底部导航/卡片与弹层越白越厚（越像磨砂玻璃）",
+                    "真实的背景模糊半径（Haze）：数字越大，玻璃后面的壁纸糊得越厉害、质感越厚",
                 glyph = Glyph.Palette,
             )
             Spacer(Modifier.height(6.dp))

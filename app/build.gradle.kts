@@ -41,8 +41,8 @@ android {
         applicationId = "com.jingoujiao.ccsutschedule"
         minSdk = 26
         targetSdk = 36
-        versionCode = 9
-        versionName = "1.4.1"
+        versionCode = 10
+        versionName = "1.5.0"
     }
 
     /**
@@ -99,7 +99,10 @@ kotlin {
 }
 
 dependencies {
-    val composeVersion = "1.11.2"
+    val composeVersion = "1.12.1"
+    // Haze：真正的背景模糊（backdrop blur）。Android 12+ 走 RenderEffect，
+    // 低版本自动退化成「磨砂填充 + 高光」，不需要我们写两套代码。
+    val hazeVersion = "1.7.3"
 
     implementation("androidx.activity:activity-compose:1.13.0")
     implementation("androidx.core:core:1.15.0")
@@ -110,6 +113,7 @@ dependencies {
     implementation("androidx.compose.runtime:runtime:$composeVersion")
     implementation("androidx.compose.material3:material3:1.4.0")
     implementation("androidx.compose.material:material-icons-core:1.7.4")
+    implementation("dev.chrisbanes.haze:haze:$hazeVersion")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.8.1")
 
     debugImplementation("androidx.compose.ui:ui-tooling:$composeVersion")

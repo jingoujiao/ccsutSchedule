@@ -37,12 +37,15 @@ import androidx.compose.material3.Switch
 import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.alpha
@@ -73,15 +76,31 @@ import com.jingoujiao.ccsutschedule.data.AppSettings
 import com.jingoujiao.ccsutschedule.data.BackgroundPresets
 import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
+import com.jingoujiao.ccsutschedule.ui.theme.LocalHazeState
 import com.jingoujiao.ccsutschedule.ui.theme.hsl
+import dev.chrisbanes.haze.hazeSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+
+/**
+ * 「当前有没有弹层打开」的回调。
+ *
+ * 弹层（[CcsutSheet] / [CcsutDialog]）跑在独立的 Window 里，没法把自己的玻璃做成真模糊，
+ * 所以改成把**下面的课表整体糊掉**——真模糊看不见的东西，用模糊盖住是一样的效果。
+ * 由 `AppRoot` 提供，把这些弹层的可见性汇总到它自己的 modalOpen 判断里。
+ */
+val LocalModalVisibility = staticCompositionLocalOf<(Boolean) -> Unit> { { } }
 
 /**
  * 背景：底色（或自定义图片）+ 上下柔和蒙层，保证玻璃面板与文字都读得清。
  *
  * 全部用一次 [drawBehind] 画完：底色光斑 → 背景图（等比裁切铺满）→ 蒙层。
- * 这样玻璃面板是「真的浮在图片上」，而不是浮在一个不透明的色块上。
+ *
+ * **结构上分成两层**（这是真玻璃的前提）：
+ *  - 下面一层只画壁纸，并且用 `hazeSource` 把自己登记成 Haze 的模糊素材；
+ *  - 上面一层才是 App 的界面，里面的每块玻璃用 `hazeEffect` 去采样下面那层。
+ * 如果界面和壁纸画在同一个节点里，Haze 就没法把「壁纸」单独抠出来模糊，
+ * 玻璃后面只会是它自己，看起来就是以前那种假的半透明白。
  */
 @Composable
 fun AppBackground(settings: AppSettings, content: @Composable BoxScope.() -> Unit) {
@@ -103,37 +122,40 @@ fun AppBackground(settings: AppSettings, content: @Composable BoxScope.() -> Uni
         }
     }
     val dark = LocalDarkTheme.current
+    val hazeState = LocalHazeState.current
     val hue = settings.paletteHue
     val alpha = settings.backgroundAlpha.coerceIn(0f, 1f)
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .drawBehind {
-                drawRect(if (dark) hsl(hue.toFloat(), 0.22f, 0.08f) else hsl(hue.toFloat(), 0.34f, 0.97f))
-                drawAurora(hue, dark)
-                val image = bitmap
-                if (image != null) drawImageCropped(image, alpha)
-                // 顶部/底部蒙层：文字颜色是跟着主题走的，所以蒙层也用主题底色——
-                // 浅色主题配深色照片、深色主题配浅色照片都能读清，只把壁纸压成一层雾。
-                // 顶部（大号日期那一行）压得更重一点，中间几乎不动，保证壁纸还是壁纸。
-                val scrim = if (dark) {
-                    Color.Black.copy(alpha = 0.55f)
-                } else {
-                    hsl(hue.toFloat(), 0.30f, 0.97f).copy(alpha = 0.72f)
+    Box(modifier = Modifier.fillMaxSize()) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(if (hazeState != null) Modifier.hazeSource(hazeState) else Modifier)
+                .drawBehind {
+                    drawRect(if (dark) hsl(hue.toFloat(), 0.22f, 0.08f) else hsl(hue.toFloat(), 0.34f, 0.97f))
+                    drawAurora(hue, dark)
+                    val image = bitmap
+                    if (image != null) drawImageCropped(image, alpha)
+                    // 顶部/底部蒙层：文字颜色是跟着主题走的，所以蒙层也用主题底色——
+                    // 浅色主题配深色照片、深色主题配浅色照片都能读清，只把壁纸压成一层雾。
+                    // 顶部（大号日期那一行）压得更重一点，中间几乎不动，保证壁纸还是壁纸。
+                    val scrim = if (dark) {
+                        Color.Black.copy(alpha = 0.55f)
+                    } else {
+                        hsl(hue.toFloat(), 0.30f, 0.97f).copy(alpha = 0.72f)
+                    }
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to scrim,
+                            0.14f to scrim.copy(alpha = scrim.alpha * 0.55f),
+                            0.32f to Color.Transparent,
+                            0.72f to Color.Transparent,
+                            0.90f to scrim.copy(alpha = scrim.alpha * 0.45f),
+                            1f to scrim.copy(alpha = scrim.alpha * 0.8f),
+                        ),
+                        size = size,
+                    )
                 }
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to scrim,
-                        0.14f to scrim.copy(alpha = scrim.alpha * 0.55f),
-                        0.32f to Color.Transparent,
-                        0.72f to Color.Transparent,
-                        0.90f to scrim.copy(alpha = scrim.alpha * 0.45f),
-                        1f to scrim.copy(alpha = scrim.alpha * 0.8f),
-                    ),
-                    size = size,
-                )
-            }
-    ) {
+        )
         content()
     }
 }
@@ -573,45 +595,65 @@ fun CcsutSheet(
         onDismissRequest = onDismiss,
         properties = PopupProperties(focusable = true),
     ) {
-        Box(Modifier.fillMaxSize()) {
-            // 遮罩压暗：弹层打开时，后面的课表文字不能和弹层里的字叠在一起
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(Color.Black.copy(alpha = 0.50f))
-                    .clickable(onClick = onDismiss)
-            )
-            AnimatedVisibility(
-                visible = appeared,
-                enter = slideInVertically(tween(220)) { it },
-                exit = slideOutVertically(tween(180)) { it },
-                modifier = Modifier.align(Alignment.BottomCenter),
-            ) {
-                GlassSurface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
-                    elevation = 18.dp,
+        ModalWindow {
+            Box(Modifier.fillMaxSize()) {
+                // 遮罩压暗：弹层打开时，后面的课表文字不能和弹层里的字叠在一起
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.50f))
+                        .clickable(onClick = onDismiss)
+                )
+                AnimatedVisibility(
+                    visible = appeared,
+                    enter = slideInVertically(tween(220)) { it },
+                    exit = slideOutVertically(tween(180)) { it },
+                    modifier = Modifier.align(Alignment.BottomCenter),
                 ) {
-                    Column(
-                        Modifier
-                            .padding(start = 20.dp, end = 20.dp, top = 14.dp)
-                            .windowInsetsPadding(WindowInsets.navigationBars)
-                            .padding(bottom = 26.dp)
+                    GlassSurface(
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                        elevation = 18.dp,
                     ) {
-                        Box(
+                        Column(
                             Modifier
-                                .align(Alignment.CenterHorizontally)
-                                .width(38.dp)
-                                .height(4.dp)
-                                .clip(CircleShape)
-                                .background(MaterialTheme.colorScheme.outlineVariant)
-                        )
-                        Spacer(Modifier.height(16.dp))
-                        content()
+                                .padding(start = 20.dp, end = 20.dp, top = 14.dp)
+                                .windowInsetsPadding(WindowInsets.navigationBars)
+                                .padding(bottom = 26.dp)
+                        ) {
+                            Box(
+                                Modifier
+                                    .align(Alignment.CenterHorizontally)
+                                    .width(38.dp)
+                                    .height(4.dp)
+                                    .clip(CircleShape)
+                                    .background(MaterialTheme.colorScheme.outlineVariant)
+                            )
+                            Spacer(Modifier.height(16.dp))
+                            content()
+                        }
                     }
                 }
             }
         }
+    }
+}
+
+/**
+ * 弹层窗口里的固定动作：
+ *  1. 告诉外面「有弹层打开了」——外面的课表要整体糊掉，弹层的玻璃才像真玻璃；
+ *  2. 关掉 Haze。`Popup` / `Dialog` 是独立 Window，Haze 用的是窗口内坐标，
+ *     跨窗口采样会取到错位的一块背景，所以这里让它退回静态磨砂（见 [LocalHazeState]）。
+ */
+@Composable
+private fun ModalWindow(content: @Composable () -> Unit) {
+    val onModalVisibilityChange = LocalModalVisibility.current
+    DisposableEffect(Unit) {
+        onModalVisibilityChange(true)
+        onDispose { onModalVisibilityChange(false) }
+    }
+    CompositionLocalProvider(LocalHazeState provides null) {
+        content()
     }
 }
 
@@ -624,33 +666,35 @@ fun CcsutDialog(
     content: @Composable ColumnScope.() -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .padding(26.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            GlassSurface(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(26.dp),
-                elevation = 22.dp,
+        ModalWindow {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .padding(26.dp),
+                contentAlignment = Alignment.Center,
             ) {
-                Column(Modifier.padding(20.dp)) {
-                    Text(
-                        title,
-                        fontSize = 17.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = MaterialTheme.colorScheme.onSurface,
-                    )
-                    Spacer(Modifier.height(10.dp))
-                    Column(Modifier.heightIn(max = 430.dp), content = content)
-                    Spacer(Modifier.height(16.dp))
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        content = buttons,
-                    )
+                GlassSurface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(26.dp),
+                    elevation = 22.dp,
+                ) {
+                    Column(Modifier.padding(20.dp)) {
+                        Text(
+                            title,
+                            fontSize = 17.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                        Spacer(Modifier.height(10.dp))
+                        Column(Modifier.heightIn(max = 430.dp), content = content)
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            content = buttons,
+                        )
+                    }
                 }
             }
         }
