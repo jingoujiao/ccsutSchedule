@@ -233,6 +233,15 @@ App 侧行为：「检查更新」手动检查；「自动检查更新」在启�
 
 > 说明：仓库内不放截图，因为截图里会带个人课表与姓名；验收结论以上表为准。
 
+## 已做过的验收（2026-09-18，1.5.0 发布）
+
+| 项目 | 结果 |
+| --- | --- |
+| 单元测试 `:app:testDebugUnitTest` | 59 项：58 通过 + 1 跳过（本机根目录没有 `xskb.xlsx` 时才跳过的真实文件体检） |
+| 正式包（1.5.0） | `:app:assembleRelease` 用 `tmp/ccsut-release.keystore` 签名，产物 9.6 MB（`dist/ccsutSchedule-1.5.0.apk`，SHA-256 `ecfcf512…73091c`）；`apksigner` 校验 v2 签名通过，证书 SHA-256 `2e106108…4f62bd` 与 1.2.x / 1.3.0 / 1.4.x 同一把密钥（老用户可覆盖安装） |
+| 发布（1.5.0） | GitHub 与 Gitee 的 `releases/latest` 都返回 `v1.5.0` 且带 `ccsutSchedule-1.5.0.apk`；GitHub 的 tag `v1.5.0` 指向提交 `bad7709`；两个源下载下来的 APK 与本地 `dist/` 产物**逐字节一致**（SHA-256 `ecfcf512…73091c`） |
+| 更新全链路（1.5.0） | 模拟器装上正式包 1.4.1 → 启动自动检查到「发现新版本 1.5.0」并显示 Release 说明 → 点「下载并安装」→ 下载完成 → 拉起系统安装器点 `UPDATE` → 设备上版本变成 `versionName=1.5.0 / versionCode=10`；设备 `cache/update/ccsut-1.5.0.apk` 的 SHA-256 与本地产物**完全一致** |
+
 ## xskb.xlsx 解析约定
 
 文件是「节次列 + 星期X 列」的网格，单元格里可能塞了多门课：
