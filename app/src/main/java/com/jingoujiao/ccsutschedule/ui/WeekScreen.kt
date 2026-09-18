@@ -70,6 +70,7 @@ import com.jingoujiao.ccsutschedule.data.SCHEDULE_FONT_ALPHA_RANGE
 import com.jingoujiao.ccsutschedule.data.SCHEDULE_FONT_SCALE_RANGE
 import com.jingoujiao.ccsutschedule.data.SECTION_BREAKS
 import com.jingoujiao.ccsutschedule.data.WeekUtils
+import com.jingoujiao.ccsutschedule.data.coursesVisibleInWeek
 import com.jingoujiao.ccsutschedule.ui.theme.GlassSurface
 import com.jingoujiao.ccsutschedule.ui.theme.LocalDarkTheme
 import com.jingoujiao.ccsutschedule.ui.theme.courseColor
@@ -872,11 +873,17 @@ private fun GridBody(
                     userScrollEnabled = !dragging,
                 ) { page ->
                     val pageWeek = page + 1
-                    // 注意：网格里画出来的就是 courses 这一份，
+                    // 这一页真正要画的课：默认**只画这一周有效的课**，
+                    // 不然别的周的课会串到每一页上（每周看起来一模一样、同一门课还会重复出现）。
+                    // 打开「显示非本周课程」后才把其它周的课也画出来，用淡色区分。
+                    val visibleCourses = remember(courses, pageWeek, settings.showOtherWeeks) {
+                        coursesVisibleInWeek(courses, pageWeek, settings.showOtherWeeks)
+                    }
+                    // 注意：网格里画出来的就是 visibleCourses 这一份，
                     // 拖动命中也必须用同一份，否则「看得见却拖不动」。
-                    val dimmed = remember(courses, pageWeek, settings.showOtherWeeks) {
+                    val dimmed = remember(visibleCourses, pageWeek, settings.showOtherWeeks) {
                         if (settings.showOtherWeeks) {
-                            courses.filterNot { it.activeInWeek(pageWeek) }.map { it.id }.toSet()
+                            visibleCourses.filterNot { it.activeInWeek(pageWeek) }.map { it.id }.toSet()
                         } else {
                             emptySet()
                         }
@@ -889,7 +896,7 @@ private fun GridBody(
                         colPx,
                         maxPeriod,
                         headerPx,
-                        courses,
+                        visibleCourses,
                     ) {
                         detectDragGesturesAfterLongPress(
                             onDragStart = { local ->
@@ -898,7 +905,7 @@ private fun GridBody(
                                 val areaX = local.x + periodColPx
                                 val weekday = weekdayAt(areaX)
                                 val period = (local.y / cellPx).toInt().coerceIn(0, maxPeriod - 1) + 1
-                                val hit = courses
+                                val hit = visibleCourses
                                     .filter { it.weekday == weekday && period in it.periods }
                                     .minByOrNull { it.span }
                                 if (hit == null) {
@@ -969,7 +976,7 @@ private fun GridBody(
                                     y = y,
                                     targetWeekday = targetWeekday,
                                     targetPeriod = targetPeriod,
-                                    allowed = OverlapRules.rejectReason(moved, courses) == null,
+                                    allowed = OverlapRules.rejectReason(moved, visibleCourses) == null,
                                 )
                             },
                         )
@@ -983,8 +990,8 @@ private fun GridBody(
                         Row(Modifier.fillMaxSize()) {
                             // 周一 … 周日（各占等宽，一屏放下）
                             for (weekday in 1..7) {
-                                val daySlots = remember(courses, weekday, maxPeriod) {
-                                    layoutColumn(courses.filter { it.weekday == weekday }, maxPeriod)
+                                val daySlots = remember(visibleCourses, weekday, maxPeriod) {
+                                    layoutColumn(visibleCourses.filter { it.weekday == weekday }, maxPeriod)
                                 }
                                 Column(modifier = Modifier.weight(1f)) {
                                     daySlots.forEach { slot ->

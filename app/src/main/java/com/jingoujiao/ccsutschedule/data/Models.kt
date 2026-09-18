@@ -36,6 +36,21 @@ data class Course(
             weeks == other.weeks
 }
 
+/**
+ * 某一周课表网格里真正要画的课程。
+ *
+ * 默认**只画这一周有效的课**：不过滤的话，别的周的课会串到每一页上——每周看起来一模一样，
+ * 同一时段还会凭空多出重叠的卡片（比如第 3 周与第 4 周的两份「军事理论」一起画出来）。
+ * 打开设置里的「显示非本周课程」时才把其它周的课也画出来（由调用方淡显）。
+ *
+ * 纯函数，有单测（这个过滤在 1.4.0 的重构里被漏掉过，别再丢）。
+ */
+fun coursesVisibleInWeek(
+    courses: List<Course>,
+    week: Int,
+    showOtherWeeks: Boolean,
+): List<Course> = if (showOtherWeeks) courses else courses.filter { it.activeInWeek(week) }
+
 @Serializable
 data class PeriodTime(
     val index: Int,
